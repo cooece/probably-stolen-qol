@@ -38,6 +38,7 @@ namespace QoL
 
         /// <summary>「显示方式」里代表数字档的选项文字，和 QoLSettings 里的choices 必须一致。</summary>
         private const string ScoreChoice = "酿造评分";
+        private const string KanjiChoice = "甲乙丙丁";
 
         /// <summary>设置来源。为空时按「全开、符号模式」的默认行为跑。</summary>
         private static QoLSettings _settings;
@@ -47,9 +48,16 @@ namespace QoL
         /// <summary>免鉴定：开启时直接读 condition，关闭时只认鉴定过的标签。</summary>
         private static bool WithoutMagnifier => _settings == null || _settings.BerrySkipMagnifier.Value;
 
-        /// <summary>true = 数字模式（+2 / +1 / +0 / -1）；false = 符号模式。</summary>
+        /// <summary>true = 数字模式（+2 / +1 / +0 / -1）。</summary>
         private static bool ShowScore =>
             _settings != null && _settings.BerryDisplayMode.Value == ScoreChoice;
+
+        /// <summary>true = 甲乙丙丁模式。</summary>
+        private static bool ShowKanji =>
+            _settings != null && _settings.BerryDisplayMode.Value == KanjiChoice;
+
+        /// <summary>0=符号 1=数字 2=汉字，对应贴图缓存的第一个下标。</summary>
+        private static int Mode => ShowScore ? 1 : (ShowKanji ? 2 : 0);
 
         private static Harmony _harmony;
         private static bool _warned;
@@ -62,8 +70,8 @@ namespace QoL
         private static readonly List<WeakReference<GameItem>> Tracked = new List<WeakReference<GameItem>>();
 
         /// <summary>[模式, 等级] → 贴图/精灵，四档各一份。</summary>
-        private static readonly Sprite[,] Sprites = new Sprite[2, 5];
-        private static readonly Texture2D[,] Textures = new Texture2D[2, 5];
+        private static readonly Sprite[,] Sprites = new Sprite[3, 5];
+        private static readonly Texture2D[,] Textures = new Texture2D[3, 5];
 
         private sealed class Binding
         {
@@ -122,7 +130,7 @@ namespace QoL
                     settings.BerryDisplayMode.OnChanged += OnModeChanged;
                 }
 
-                QLog.Info("荧光莓徽标：已挂载（" + (ShowScore ? "数字" : "符号") +
+                QLog.Info("荧光莓徽标：已挂载（" + (ShowScore ? "数字" : (ShowKanji ? "甲乙丙丁" : "符号")) +
                           "模式，免鉴定=" + WithoutMagnifier + "）");
             }
             catch (Exception e)
@@ -272,7 +280,7 @@ namespace QoL
 
             try
             {
-                int mode = ShowScore ? 1 : 0;
+                int mode = Mode;
                 if (Sprites[mode, grade] == null)
                 {
                     CreateSprite(grade, mode);
@@ -362,7 +370,7 @@ namespace QoL
 
         private static void CreateSprite(int grade, int mode)
         {
-            uint[] pixels = mode == 1 ? ScorePixels(grade) : Pixels(grade);
+            uint[] pixels = BuildPixels(grade, mode);
 
             var colors = new Color32[pixels.Length];
             for (int i = 0; i < pixels.Length; i++)
@@ -387,22 +395,15 @@ namespace QoL
                 tex, new Rect(0f, 0f, 32f, 32f), new Vector2(0.5f, 0.5f), 100f);
         }
 
-        private static uint[] Pixels(int grade)
-        {
-            return BuildPixels(grade, false);
-        }
-
-        private static uint[] ScorePixels(int grade)
-        {
-            return BuildPixels(grade, true);
-        }
-
         /// <summary>
-        /// 画 32×32 的像素图。色块是 9×9（数字模式 11×9），贴在右上角；
-        /// 四个角留空做出圆角感，边框用深色 #242335，中间按等级画符号。
-        /// 这套坐标和配色的常量是从参考模组逐字搬过来的。
+        /// 画 32×32 的像素图。三种模式共用同一个外框逻辑，只是方块尺寸和里面的图案不同：
+        ///   符号   9×9   贴右边第 22 列起
+        ///   数字  11×9   要先放下 +/- 号
+        ///   汉字  15×15  13×13 的字形外面还得留 1px 边框
+        /// 方块四个角留空，边框和图案用同一个深色 #242335。
+        /// 坐标和配色常量都是从参考模组原样搬过来的。
         /// </summary>
-        private static uint[] BuildPixels(int grade, bool showScore)
+        private static uint[] BuildPixels(int grade, int mode)
         {
             var px = new uint[1024];
 
@@ -420,55 +421,57 @@ namespace QoL
                 default: bg = 3863694335u; break;  // #E64B4B 红
             }
 
-            const uint Edge = 606287359u;          // #242335 边框与符号色
+            const uint Edge = 606287359u;          // #242335 边框与图案色
 
-            int x0 = showScore ? 20 : 22;
-            int w = 31 - x0;
+            int boxW = mode == 1 ? 11 : (mode == 2 ? 15 : 9);
+            int boxH = mode == 1 ? 9 : boxW;
+            int x0 = 32 - boxW - 1;
 
-            for (int i = 1; i <= 9; i++)
+            for (int row = 0; row < boxH; row++)
             {
-                for (int j = x0; j <= 30; j++)
+                for (int col = 0; col < boxW; col++)
                 {
-                    int dx = j - x0;
-                    int dy = i - 1;
-
                     // 四角留空
-                    if ((dx == 0 || dx == w - 1) && (dy == 0 || dy == 8))
+                    if ((col == 0 || col == boxW - 1) && (row == 0 || row == boxH - 1))
                     {
                         continue;
                     }
 
-                    bool edge = dx == 0 || dx == w - 1 || dy == 0 || dy == 8;
+                    bool edge = col == 0 || col == boxW - 1 || row == 0 || row == boxH - 1;
 
-                    bool symbol;
-                    switch (grade)
+                    bool ink;
+                    switch (mode)
                     {
-                        case 1:
-                            symbol = dx >= 2 && dx <= 6 && (dy == dx || dy == 8 - dx);
-                            break;
-                        case 2:
-                            symbol = dy == 4 && dx >= 2 && dx <= 6;
-                            break;
-                        case 3:
-                            symbol = (dy == 4 && dx >= 2 && dx <= 6)
-                                     || (dx == 4 && dy >= 2 && dy <= 6);
-                            break;
-                        default:
-                            symbol = dx == 4 && ((dy >= 2 && dy <= 4) || dy == 6);
-                            break;
+                        case 1: ink = IsScorePixel(grade, col, row); break;
+                        case 2: ink = IsKanjiPixel(grade, col, row); break;
+                        default: ink = IsSymbolPixel(grade, col, row); break;
                     }
 
-                    if (showScore)
-                    {
-                        symbol = IsScorePixel(grade, dx, dy);
-                    }
-
-                    // 注意是 31 - i：贴图 y 轴朝上，而这里 i 是从顶部往下数的
-                    px[(31 - i) * 32 + j] = (edge || symbol) ? Edge : bg;
+                    // 贴图 y 轴朝上，row=0 是最上面那一行，所以是 30 - row
+                    px[(30 - row) * 32 + x0 + col] = (edge || ink) ? Edge : bg;
                 }
             }
 
             return px;
+        }
+
+        /// <summary>
+        /// 符号模式。方块内侧 5×5 的范围里画：
+        ///   V/X 形、横杠、十字、竖杠带底座。
+        /// </summary>
+        private static bool IsSymbolPixel(int grade, int dx, int dy)
+        {
+            switch (grade)
+            {
+                case 1:
+                    return dx >= 2 && dx <= 6 && (dy == dx || dy == 8 - dx);
+                case 2:
+                    return dy == 4 && dx >= 2 && dx <= 6;
+                case 3:
+                    return (dy == 4 && dx >= 2 && dx <= 6) || (dx == 4 && dy >= 2 && dy <= 6);
+                default:
+                    return dx == 4 && ((dy >= 2 && dy <= 4) || dy == 6);
+            }
         }
 
         /// <summary>数字模式的点阵：左边一个加减号，右边 3×5 的阿拉伯数字。</summary>
@@ -504,6 +507,107 @@ namespace QoL
 
             return glyph[(y - 2) * 3 + x - 6] == '1';
         }
+
+        /// <summary>
+        /// 汉字模式。13×13 的字形放在方块内侧，四边各留 1 像素顶着边框。
+        ///
+        /// 位图是拿宋体 13px 渲染后二值化存下来的——运行时不去碰字体，
+        /// 之前用 TMP 字形采样踩过的坑（图集不可读、字体随机取错、坐标系要翻转）全都不用再管。
+        /// 排序也是「甲乙丙丁」，甲最好、丁最差。
+        /// </summary>
+        private static bool IsKanjiPixel(int grade, int dx, int dy)
+        {
+            int gx = dx - 1;
+            int gy = dy - 1;
+
+            if (gx < 0 || gx >= 13 || gy < 0 || gy >= 13)
+            {
+                return false;
+            }
+
+            string[] glyph;
+            switch (grade)
+            {
+                case 3: glyph = GlyphJia; break;    // 优
+                case 2: glyph = GlyphYi; break;     // 普通
+                case 1: glyph = GlyphBing; break;   // 差
+                default: glyph = GlyphDing; break;  // 发霉
+            }
+
+            return glyph[gy][gx] == '1';
+        }
+
+        // 甲：口字框中间一竖，竖到底
+        private static readonly string[] GlyphJia =
+        {
+            "0011111111100",
+            "0010001000100",
+            "0010001000100",
+            "0011111111100",
+            "0010001000100",
+            "0010001000100",
+            "0010001000100",
+            "0011111111100",
+            "0010001000100",
+            "0000001000000",
+            "0000001000000",
+            "0000001000000",
+            "0000000000000",
+        };
+
+        // 乙
+        private static readonly string[] GlyphYi =
+        {
+            "0000000000000",
+            "0111111111000",
+            "0000000010000",
+            "0000000100000",
+            "0000001000000",
+            "0000010000000",
+            "0000100000000",
+            "0001000000000",
+            "0010000000100",
+            "0010000000100",
+            "0010000000100",
+            "0001111111100",
+            "0000000000000",
+        };
+
+        // 丙
+        private static readonly string[] GlyphBing =
+        {
+            "0000000000000",
+            "0111111111110",
+            "0000001000000",
+            "0000001000000",
+            "0111111111110",
+            "0100001000010",
+            "0100001000010",
+            "0100010100010",
+            "0100100010010",
+            "0101000001010",
+            "0100000000010",
+            "0100000000110",
+            "0000000000000",
+        };
+
+        // 丁
+        private static readonly string[] GlyphDing =
+        {
+            "0000000000000",
+            "0111111111110",
+            "0000001000000",
+            "0000001000000",
+            "0000001000000",
+            "0000001000000",
+            "0000001000000",
+            "0000001000000",
+            "0000001000000",
+            "0000001000000",
+            "0000001000000",
+            "0000111000000",
+            "0000000000000",
+        };
 
         // ------------------------------------------------------------------
         // 刷新与卸载
