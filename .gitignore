@@ -1,0 +1,22 @@
+# 编译产物
+mod/QoL/bin/
+mod/QoL/obj/
+mod/**/bin/
+mod/**/obj/
+
+# 本地备份（体积大，不进版本库）
+.backup/
+
+# IDE
+.vs/
+*.user
+*.suo
+
+# 部署时临时拷出的文件
+*.pdb
+
+# 本地工具链（体积大，不进版本库）
+.tools/
+
+# 一次性分析脚本
+_*.py
