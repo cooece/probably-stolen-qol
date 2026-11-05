@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>荧光莓品质 · 光晕方案</title>
+<style>
+  :root{
+    --bg:#0A0D16;
+    --cell:#0E1522;
+    --line:rgba(140,170,210,.16);
+    --ink:#E8EDF5;
+    --dim:#7E8DA3;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);
+    background-image:
+      radial-gradient(1100px 560px at 42% -8%, #16203A 0%, transparent 70%),
+      radial-gradient(800px 420px at 12% 108%, #121A2B 0%, transparent 70%);
+    color:var(--ink);
+    font-family:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+    padding:36px 30px 64px;min-height:100vh;
+  }
+  header{max-width:1180px;margin:0 auto 28px}
+  h1{font-size:19px;font-weight:600;letter-spacing:.4px}
+  h1 span{color:#7C8CA6;font-weight:400;font-size:13px;margin-left:12px}
+  .sub{margin-top:9px;font-size:12.5px;color:#78879E;line-height:1.8;max-width:800px}
+
+  .board{
+    max-width:1180px;margin:0 auto;
+    display:grid;grid-template-columns:132px repeat(3,1fr);
+    gap:1px;background:var(--line);
+    border:1px solid var(--line);border-radius:10px;overflow:hidden;
+  }
+  .hd{
+    background:#0D1320;padding:12px 14px;
+    font-size:11px;letter-spacing:1px;color:#8FA0B8;font-weight:600;
+  }
+  .hd.center{text-align:center}
+  .rowlab{
+    background:#0C1220;padding:18px 14px;
+    display:flex;flex-direction:column;justify-content:center;gap:4px;
+  }
+  .rowlab b{font-size:13px;color:#D6E0EC;font-weight:600}
+  .rowlab span{font-size:11px;color:#6E7E94}
+  .rowlab .sc{font-size:11.5px;font-weight:600;margin-top:2px}
+  .s2{color:#B06BFF}
+  .s1{color:#8A7BE8}
+  .s0{color:#8A8A8A}
+  .sm1{color:#C4645C}
+
+  .cellwrap{
+    background:#0B111C;padding:20px;
+    display:flex;align-items:center;justify-content:center;gap:14px;
+  }
+
+  /* 物品格 */
+  .slot{
+    position:relative;width:96px;height:96px;
+    background:var(--cell);
+    border:1px solid rgba(120,150,190,.14);
+    border-radius:3px;
+    display:flex;align-items:center;justify-content:center;
+    overflow:visible;
+  }
+  .slot.bright{border-color:rgba(150,190,240,.26)}
+
+  /* 发光层 */
+  .halo{
+    position:absolute;inset:-16px;border-radius:50%;
+    pointer-events:none;
+    filter:blur(13px);
+    z-index:0;
+  }
+  .berry{position:relative;z-index:1;width:52px;height:52px}
+
+  .g-small  {background:radial-gradient(circle, rgba(176,107,255,.85) 0%, rgba(176,107,255,.35) 38%, transparent 68%); animation:breathe 2.6s ease-in-out infinite}
+  .g-std    {background:radial-gradient(circle, rgba(138,123,232,.62) 0%, rgba(138,123,232,.24) 40%, transparent 70%)}
+  .g-none   {display:none}
+  .g-mold   {background:radial-gradient(circle, rgba(90,110,70,.42) 0%, rgba(70,90,55,.18) 42%, transparent 72%)}
+
+  @keyframes breathe{
+    0%,100%{opacity:.82; transform:scale(.96)}
+    50%    {opacity:1;   transform:scale(1.06)}
+  }
+
+  /* 参考 MOD 的标记（模拟） */
+  .refbadge{
+    position:absolute;right:3px;bottom:3px;
+    width:22px;height:22px;border-radius:2px;
+    display:flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:700;line-height:1;
+    font-family:Consolas,monospace;
+  }
+  .rb-small{background:#0EA5E9;color:#04212F}
+  .rb-std  {background:#22C55E;color:#052A14}
+  .rb-waste{background:#E8A838;color:#2A1C04}
+  .rb-mold {background:#BE514C;color:#2A0B0A}
+
+  .reftxt{
+    font-size:12px;line-height:1.9;color:#7E8DA3;max-width:150px;
+  }
+  .reftxt code{
+    font-family:Consolas,monospace;color:#9FB6D0;
+    background:rgba(255,255,255,.05);padding:1px 4px;border-radius:3px;
+  }
+
+  .notes{max-width:1180px;margin:26px auto 0;display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  .note{
+    background:linear-gradient(180deg,rgba(255,255,255,.026),rgba(255,255,255,.006));
+    border:1px solid var(--line);border-radius:10px;padding:16px 18px;
+  }
+  .note h3{font-size:12px;color:#9FB2C9;font-weight:600;letter-spacing:.5px;margin-bottom:8px}
+  .note p{font-size:12px;line-height:1.8;color:#7E8DA3}
+  .note p b{color:#C8B183;font-weight:600}
+
+  .foot{max-width:1180px;margin:22px auto 0;font-size:12px;color:#68778D;line-height:1.9}
+  .foot b{color:#9FB2C9}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>荧光莓品质 · 用发光代替标记 <span>四档品质，三种表现方式对照</span></h1>
+  <div class="sub">
+    左边是现在游戏里的样子（只能靠颜色分辨），中间是光晕方案，右边是参考 MOD 的做法。
+    光晕不改图标本身，只在它周围加一层光——好果自己会亮，不需要额外符号。
+  </div>
+</header>
+
+<div class="board">
+
+  <div class="hd">品质</div>
+  <div class="hd center">原版（只有颜色）</div>
+  <div class="hd center">光晕方案</div>
+  <div class="hd center">参考 MOD（符号 + 色块）</div>
+
+  <!-- 小果 -->
+  <div class="rowlab">
+    <b>小果</b><span>最值钱的一种</span><span class="sc s2">酿造 +2</span>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <svg class="berry" viewBox="0 0 32 32">
+        <defs><radialGradient id="p1" cx="35%" cy="30%">
+          <stop offset="0%" stop-color="#C08BFF"/><stop offset="70%" stop-color="#7B3FD4"/><stop offset="100%" stop-color="#4A2280"/>
+        </radialGradient></defs>
+        <path d="M16 10 Q17 5 21 4" stroke="#6E8F50" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <circle cx="15" cy="19" r="8.5" fill="url(#p1)"/>
+        <circle cx="12" cy="16" r="2.4" fill="rgba(255,255,255,.55)"/>
+      </svg>
+    </div>
+  </div>
+  <div class="cellwrap">
+    <div class="slot bright">
+      <div class="halo g-small"></div>
+      <svg class="berry" viewBox="0 0 32 32">
+        <defs><radialGradient id="p2" cx="35%" cy="30%">
+          <stop offset="0%" stop-color="#D9B4FF"/><stop offset="70%" stop-color="#8E4DE8"/><stop offset="100%" stop-color="#5A2A9E"/>
+        </radialGradient></defs>
+        <path d="M16 10 Q17 5 21 4" stroke="#7EA55C" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <circle cx="15" cy="19" r="8.5" fill="url(#p2)"/>
+        <circle cx="12" cy="16" r="2.4" fill="rgba(255,255,255,.7)"/>
+      </svg>
+    </div>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <svg class="berry" viewBox="0 0 32 32">
+        <defs><radialGradient id="p3" cx="35%" cy="30%">
+          <stop offset="0%" stop-color="#C08BFF"/><stop offset="70%" stop-color="#7B3FD4"/><stop offset="100%" stop-color="#4A2280"/>
+        </radialGradient></defs>
+        <circle cx="15" cy="19" r="8.5" fill="url(#p3)"/>
+      </svg>
+      <div class="refbadge rb-small">+</div>
+    </div>
+    <div class="reftxt">
+      青蓝色块 + <code>+</code> 符号<br>
+      数字模式显示 <code>+2</code>
+    </div>
+  </div>
+
+  <!-- 标准 -->
+  <div class="rowlab">
+    <b>标准果</b><span>常见</span><span class="sc s1">酿造 +1</span>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <svg class="berry" viewBox="0 0 32 32">
+        <defs><radialGradient id="q1" cx="35%" cy="30%">
+          <stop offset="0%" stop-color="#A87BD8"/><stop offset="70%" stop-color="#6B3FA8"/><stop offset="100%" stop-color="#3E2466"/>
+        </radialGradient></defs>
+        <path d="M16 10 Q17 5 21 4" stroke="#6E8F50" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <circle cx="15" cy="19" r="8.5" fill="url(#q1)"/>
+        <circle cx="12" cy="16" r="2.2" fill="rgba(255,255,255,.42)"/>
+      </svg>
+    </div>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <div class="halo g-std"></div>
+      <svg class="berry" viewBox="0 0 32 32">
+        <defs><radialGradient id="q2" cx="35%" cy="30%">
+          <stop offset="0%" stop-color="#B594E4"/><stop offset="70%" stop-color="#7448B4"/><stop offset="100%" stop-color="#422870"/>
+        </radialGradient></defs>
+        <path d="M16 10 Q17 5 21 4" stroke="#6E8F50" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <circle cx="15" cy="19" r="8.5" fill="url(#q2)"/>
+        <circle cx="12" cy="16" r="2.2" fill="rgba(255,255,255,.5)"/>
+      </svg>
+    </div>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <svg class="berry" viewBox="0 0 32 32">
+        <circle cx="15" cy="19" r="8.5" fill="#6B3FA8"/>
+      </svg>
+      <div class="refbadge rb-std">|</div>
+    </div>
+    <div class="reftxt">
+      绿色块 + <code>|</code> 符号<br>
+      数字模式显示 <code>+1</code>
+    </div>
+  </div>
+
+  <!-- 未熟 -->
+  <div class="rowlab">
+    <b>未成熟</b><span>偏橙 / 偏紫红</span><span class="sc s0">酿造 +0</span>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <svg class="berry" viewBox="0 0 32 32">
+        <defs><radialGradient id="r1" cx="35%" cy="30%">
+          <stop offset="0%" stop-color="#D08A5A"/><stop offset="70%" stop-color="#9A5730"/><stop offset="100%" stop-color="#5E3418"/>
+        </radialGradient></defs>
+        <path d="M16 10 Q17 5 21 4" stroke="#7A7A48" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <circle cx="15" cy="19" r="8.5" fill="url(#r1)"/>
+      </svg>
+    </div>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <div class="halo g-none"></div>
+      <svg class="berry" viewBox="0 0 32 32">
+        <defs><radialGradient id="r2" cx="35%" cy="30%">
+          <stop offset="0%" stop-color="#C98A5E"/><stop offset="70%" stop-color="#8E5732"/><stop offset="100%" stop-color="#54331A"/>
+        </radialGradient></defs>
+        <path d="M16 10 Q17 5 21 4" stroke="#7A7A48" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <circle cx="15" cy="19" r="8.5" fill="url(#r2)"/>
+      </svg>
+    </div>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <svg class="berry" viewBox="0 0 32 32">
+        <circle cx="15" cy="19" r="8.5" fill="#9A5730"/>
+      </svg>
+      <div class="refbadge rb-waste">V</div>
+    </div>
+    <div class="reftxt">
+      橙黄色块 + <code>V</code> 符号<br>
+      数字模式显示 <code>+0</code>
+    </div>
+  </div>
+
+  <!-- 发霉 -->
+  <div class="rowlab">
+    <b>发霉</b><span>下方有霉斑</span><span class="sc sm1">酿造 −1</span>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <svg class="berry" viewBox="0 0 32 32">
+        <defs><radialGradient id="t1" cx="35%" cy="30%">
+          <stop offset="0%" stop-color="#7A7A6A"/><stop offset="70%" stop-color="#4A4A40"/><stop offset="100%" stop-color="#2A2A24"/>
+        </radialGradient></defs>
+        <circle cx="15" cy="19" r="8.5" fill="url(#t1)"/>
+        <circle cx="12" cy="22" r="1.8" fill="#8FA860" opacity=".8"/>
+        <circle cx="17" cy="23" r="1.3" fill="#8FA860" opacity=".65"/>
+        <circle cx="15" cy="25" r="1" fill="#8FA860" opacity=".5"/>
+      </svg>
+    </div>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <div class="halo g-mold"></div>
+      <svg class="berry" viewBox="0 0 32 32">
+        <defs><radialGradient id="t2" cx="35%" cy="30%">
+          <stop offset="0%" stop-color="#6E6E5E"/><stop offset="70%" stop-color="#3E3E36"/><stop offset="100%" stop-color="#20201C"/>
+        </radialGradient></defs>
+        <circle cx="15" cy="19" r="8.5" fill="url(#t2)"/>
+        <circle cx="12" cy="22" r="1.8" fill="#7E9455" opacity=".85"/>
+        <circle cx="17" cy="23" r="1.3" fill="#7E9455" opacity=".7"/>
+        <circle cx="15" cy="25" r="1" fill="#7E9455" opacity=".55"/>
+      </svg>
+    </div>
+  </div>
+  <div class="cellwrap">
+    <div class="slot">
+      <svg class="berry" viewBox="0 0 32 32">
+        <circle cx="15" cy="19" r="8.5" fill="#4A4A40"/>
+      </svg>
+      <div class="refbadge rb-mold">⊣</div>
+    </div>
+    <div class="reftxt">
+      红色块 + <code>⊣</code> 符号<br>
+      数字模式显示 <code>−1</code>
+    </div>
+  </div>
+
+</div>
+
+<div class="notes">
+  <div class="note">
+    <h3>为什么不用符号</h3>
+    <p><code>V / | / + / ⊣</code> 四个形状和品质没有直觉关联。玩家要先学一张对照表，
+    再在背包里逐个辨认——<b>等于把"看一眼"变成了"读一遍"</b>。</p>
+  </div>
+  <div class="note">
+    <h3>为什么不用色块</h3>
+    <p>果实本身就有颜色（紫 / 偏橙 / 偏紫红）。再叠红黄绿蓝，<b>同一个图标上出现两套颜色语义</b>，
+    反而更乱。光晕是"加强原有颜色"，不是"覆盖"。</p>
+  </div>
+  <div class="note">
+    <h3>光晕的信息在哪</h3>
+    <p>就一个字：<b>亮</b>。亮到暗是连续的量，符合"品质"这种渐变概念；
+    而且它直接对应名字里的"荧光"——这不是 UI 标注，是果实自己的状态。</p>
+  </div>
+</div>
+
+<div class="foot">
+  <b>可调项：</b>光晕半径、模糊度、透明度曲线、小果要不要做呼吸动画。
+  发霉那档我压了一层极弱的暗绿——如果觉得像"还活着"，可以干脆改成完全不发光。
+</div>
+
+</body>
+</html>
