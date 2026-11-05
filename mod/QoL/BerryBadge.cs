@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 using HarmonyLib;
+using TMPro;
 using UnityEngine;
 
 namespace QoL
@@ -39,6 +40,7 @@ namespace QoL
         /// <summary>「显示方式」里代表数字档的选项文字，和 QoLSettings 里的choices 必须一致。</summary>
         private const string ScoreChoice = "酿造评分";
         private const string KanjiChoice = "甲乙丙丁";
+        private const string TextChoice = "文字";
 
         /// <summary>设置来源。为空时按「全开、符号模式」的默认行为跑。</summary>
         private static QoLSettings _settings;
@@ -55,6 +57,10 @@ namespace QoL
         /// <summary>true = 甲乙丙丁模式。</summary>
         private static bool ShowKanji =>
             _settings != null && _settings.BerryDisplayMode.Value == KanjiChoice;
+
+        /// <summary>true = 真文字模式（游戏自己的 TMP 文本节点，不是贴图）。</summary>
+        private static bool ShowText =>
+            _settings != null && _settings.BerryDisplayMode.Value == TextChoice;
 
         /// <summary>0=符号 1=数字 2=汉字，对应贴图缓存的第一个下标。</summary>
         private static int Mode => ShowScore ? 1 : (ShowKanji ? 2 : 0);
@@ -194,10 +200,113 @@ namespace QoL
             try
             {
                 Attach(__instance);
+                UpdateText(__instance);
             }
             catch
             {
                 // 渲染期间抛异常会连累游戏，一律吞掉
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 真文字模式：用游戏自己的文本节点（堆叠数量 "x5" 就是同一个东西）
+        // ------------------------------------------------------------------
+
+        private static readonly ConditionalWeakTable<GameItemElement, TreeNodeRender> TextNodes =
+            new ConditionalWeakTable<GameItemElement, TreeNodeRender>();
+
+        /// <summary>
+        /// 文字模式下，每次格子刷新时更新角上的字。
+        ///
+        /// 这里不用贴图，而是新建一个 TreeNodeRender 文本节点当子节点——
+        /// 和游戏显示堆叠数量用的是同一套 API，所以字体天然一致、任意字号都清晰，
+        /// 也不会被“图标是贴图管线”这件事限制住。
+        /// </summary>
+        private static void UpdateText(GameItemElement element)
+        {
+            if (element == null)
+            {
+                return;
+            }
+
+            bool show = Enabled && ShowText && IsBerry(element);
+            int grade = show ? DisplayGrade(element) : 0;
+            show = show && IsGrade(grade);
+
+            TextNodes.TryGetValue(element, out TreeNodeRender node);
+
+            if (node == null || node.rectTransform == null || node.text == null)
+            {
+                TextNodes.Remove(element);
+                node = null;
+
+                if (!show)
+                {
+                    return;     // 不需要显示就别建
+                }
+
+                node = TreeNodeRender.InstantiateText().SetParent(element.middle);
+                TextNodes.Add(element, node);
+
+                // 图标大约 32×32，文本框给得比图标大一点，靠对齐把它顶到右上角
+                node.rectTransform.sizeDelta = new Vector2(40f, 12f);
+                node.rectTransform.anchoredPosition = TextOffset;
+                node.text.alignment = TextAlignmentOptions.Center;
+                node.text.fontStyle = FontStyles.Bold;
+                node.text.fontSize = TextSize;
+                node.text.raycastTarget = false;
+                node.text.outlineWidth = 0.25f;
+                node.text.outlineColor = new Color32(36, 35, 53, 255);
+
+                if (_textLogged < 3)
+                {
+                    _textLogged++;
+                    Vector2 icon = element.background != null && element.background.rectTransform != null
+                        ? element.background.rectTransform.sizeDelta
+                        : Vector2.zero;
+                    QLog.Info("荧光莓文字：图标 " + icon.x + "x" + icon.y
+                              + "，文本框 " + node.rectTransform.sizeDelta.x + "x" + node.rectTransform.sizeDelta.y
+                              + "，偏移 " + TextOffset.x + "," + TextOffset.y
+                              + "，字号 " + TextSize);
+                }
+            }
+
+            if (node == null)
+            {
+                return;
+            }
+
+            node.text.text = show ? GradeText(grade) : string.Empty;
+            node.text.color = show ? GradeColor(grade) : Color.white;
+        }
+
+        /// <summary>角标文字的字号。和图标同高的一半左右，再大就会盖住物品本身。</summary>
+        private const float TextSize = 9f;
+
+        private static int _textLogged;
+
+        /// <summary>文字相对图标中心的偏移。图标原点在中心，往右上挪。</summary>
+        private static readonly Vector2 TextOffset = new Vector2(9f, 8f);
+
+        private static string GradeText(int grade)
+        {
+            switch (grade)
+            {
+                case 3: return "甲";
+                case 2: return "乙";
+                case 1: return "丙";
+                default: return "丁";
+            }
+        }
+
+        private static Color GradeColor(int grade)
+        {
+            switch (grade)
+            {
+                case 1: return new Color32(196, 138, 245, 255);   // 丙
+                case 2: return new Color32(240, 196, 71, 255);    // 乙
+                case 3: return new Color32(79, 209, 122, 255);    // 甲
+                default: return new Color32(230, 75, 75, 255);    // 丁
             }
         }
 
@@ -273,8 +382,9 @@ namespace QoL
             }
 
             int grade = DisplayGrade(item);
-            if (!IsGrade(grade))
+            if (!IsGrade(grade) || ShowText)
             {
+                // 文字模式走 BeforeRender 里的 TMP 节点，不在这里叠贴图
                 return list;
             }
 
