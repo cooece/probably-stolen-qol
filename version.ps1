@@ -16,6 +16,28 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $root
 
+# git 的输出是 UTF-8，控制台默认 GBK，不设这个中文提交信息会变成乱码
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }
+
+# git 可能不在 PATH 里（比如用的是 WorkBuddy 自带的便携版），先找一个
+if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+    $candidates = @(
+        "C:\Program Files\WorkBuddy\resources\vendor\PortableGit\mingw64\bin",
+        "C:\Program Files\Git\cmd",
+        "C:\Program Files (x86)\Git\cmd"
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path (Join-Path $c "git.exe")) {
+            $env:PATH = "$c;$env:PATH"
+            break
+        }
+    }
+    if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+        Write-Host "找不到 git。请安装 Git for Windows 后重试。" -ForegroundColor Red
+        exit 1
+    }
+}
+
 if ([string]::IsNullOrWhiteSpace($Message)) {
     Write-Host "请给这次改动一句话说明，例如：" -ForegroundColor Yellow
     Write-Host '  .\version.ps1 "修复：标签圆角过圆"' -ForegroundColor DarkGray
