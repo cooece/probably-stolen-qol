@@ -136,8 +136,7 @@ namespace QoL
                     settings.BerryDisplayMode.OnChanged += OnModeChanged;
                 }
 
-                QLog.Info("荧光莓徽标：已挂载（" + (ShowScore ? "数字" : (ShowKanji ? "甲乙丙丁" : "符号")) +
-                          "模式，免鉴定=" + WithoutMagnifier + "）");
+                QLog.Info("荧光莓徽标：已挂载（" + ModeName() + "模式，免鉴定=" + WithoutMagnifier + "）");
             }
             catch (Exception e)
             {
@@ -209,84 +208,215 @@ namespace QoL
         }
 
         // ------------------------------------------------------------------
-        // 真文字模式：用游戏自己的文本节点（堆叠数量 "x5" 就是同一个东西）
+        // 真文字模式：用游戏自己的文本节点
+        //
+        // 图标上本来就有一块文字——堆叠数量的 "x5"，类型是 TextMeshProUGUI。
+        // 所以「在图标上写字」不需要烘焙像素，建一个同样的文本节点就行，
+        // 而且字体直接从那个节点借，保证和游戏完全一致。
         // ------------------------------------------------------------------
 
-        private static readonly ConditionalWeakTable<GameItemElement, TreeNodeRender> TextNodes =
-            new ConditionalWeakTable<GameItemElement, TreeNodeRender>();
+        private sealed class TextRef
+        {
+            internal TMP_Text Text;
+            internal RectTransform Rect;
+        }
 
-        /// <summary>
-        /// 文字模式下，每次格子刷新时更新角上的字。
-        ///
-        /// 这里不用贴图，而是新建一个 TreeNodeRender 文本节点当子节点——
-        /// 和游戏显示堆叠数量用的是同一套 API，所以字体天然一致、任意字号都清晰，
-        /// 也不会被“图标是贴图管线”这件事限制住。
-        /// </summary>
+        private static readonly ConditionalWeakTable<GameItemElement, TextRef> TextNodes =
+            new ConditionalWeakTable<GameItemElement, TextRef>();
+
+        /// <summary>堆叠数量节点（私有字段），借它的字体和材质。</summary>
+        private static readonly System.Reflection.FieldInfo StackCountField =
+            AccessTools.Field(typeof(GameItemElement), "stackCountText");
+
+        /// <summary>字号。9 号在 32px 的图标上刚好占下半边多一点。</summary>
+        private const float TextSize = 9f;
+
+        /// <summary>相对图标中心的偏移，往右上角靠。</summary>
+        private static readonly Vector2 TextOffset = new Vector2(9f, 8f);
+
+        private static int _textLogged;
+        private static bool _textEntered;
+        private static bool _showSkipped;
+
         private static void UpdateText(GameItemElement element)
+        {
+            try
+            {
+                UpdateTextCore(element);
+            }
+            catch (Exception e)
+            {
+                if (_textLogged < 6)
+                {
+                    _textLogged++;
+                    QLog.Warn("荧光莓文字：更新失败 —— " + e.GetType().Name + " " + e.Message);
+                }
+            }
+        }
+
+        private static void UpdateTextCore(GameItemElement element)
         {
             if (element == null)
             {
                 return;
             }
 
-            bool show = Enabled && ShowText && IsBerry(element);
-            int grade = show ? DisplayGrade(element) : 0;
-            show = show && IsGrade(grade);
+            bool berry = IsBerry(element);
+            int grade = berry ? DisplayGrade(element) : 0;
+            bool show = Enabled && ShowText && IsGrade(grade);
 
-            TextNodes.TryGetValue(element, out TreeNodeRender node);
+            TextNodes.TryGetValue(element, out TextRef reference);
 
-            if (node == null || node.rectTransform == null || node.text == null)
+            if (!show)
             {
-                TextNodes.Remove(element);
-                node = null;
-
-                if (!show)
+                // 切回其它模式时，把之前留下的字清掉
+                if (reference != null && reference.Text != null)
                 {
-                    return;     // 不需要显示就别建
+                    reference.Text.text = string.Empty;
+                    reference.Text.enabled = false;
                 }
 
-                node = TreeNodeRender.InstantiateText().SetParent(element.middle);
-                TextNodes.Add(element, node);
-
-                // 图标大约 32×32，文本框给得比图标大一点，靠对齐把它顶到右上角
-                node.rectTransform.sizeDelta = new Vector2(40f, 12f);
-                node.rectTransform.anchoredPosition = TextOffset;
-                node.text.alignment = TextAlignmentOptions.Center;
-                node.text.fontStyle = FontStyles.Bold;
-                node.text.fontSize = TextSize;
-                node.text.raycastTarget = false;
-                node.text.outlineWidth = 0.25f;
-                node.text.outlineColor = new Color32(36, 35, 53, 255);
-
-                if (_textLogged < 3)
+                if (ShowText && !_showSkipped)
                 {
-                    _textLogged++;
-                    Vector2 icon = element.background != null && element.background.rectTransform != null
-                        ? element.background.rectTransform.sizeDelta
-                        : Vector2.zero;
-                    QLog.Info("荧光莓文字：图标 " + icon.x + "x" + icon.y
-                              + "，文本框 " + node.rectTransform.sizeDelta.x + "x" + node.rectTransform.sizeDelta.y
-                              + "，偏移 " + TextOffset.x + "," + TextOffset.y
-                              + "，字号 " + TextSize);
+                    _showSkipped = true;
+                    QLog.Info("荧光莓文字：跳过（Enabled=" + Enabled + " IsBerry=" + berry
+                              + " grade=" + grade + "）");
                 }
-            }
 
-            if (node == null)
-            {
                 return;
             }
 
-            node.text.text = show ? GradeText(grade) : string.Empty;
-            node.text.color = show ? GradeColor(grade) : Color.white;
+            if (!_textEntered)
+            {
+                _textEntered = true;
+                QLog.Info("荧光莓文字：进入更新，middle=" + (element.middle != null));
+            }
+
+            if (reference == null || reference.Text == null || reference.Rect == null)
+            {
+                TextNodes.Remove(element);
+                reference = Create(element);
+                if (reference == null)
+                {
+                    return;
+                }
+            }
+
+            reference.Text.enabled = true;
+            reference.Text.text = GradeText(grade);
+            reference.Text.color = GradeColor(grade);
         }
 
-        /// <summary>角标文字的字号。和图标同高的一半左右，再大就会盖住物品本身。</summary>
-        private const float TextSize = 9f;
+        private static TextRef Create(GameItemElement element)
+        {
+            TreeNodeRender middle = element.middle;
+            if (middle == null || middle.rectTransform == null)
+            {
+                if (_textLogged < 6)
+                {
+                    _textLogged++;
+                    QLog.Warn("荧光莓文字：middle 为空，建不了文本节点");
+                }
 
-        private static int _textLogged;
+                return null;
+            }
 
-        /// <summary>文字相对图标中心的偏移。图标原点在中心，往右上挪。</summary>
-        private static readonly Vector2 TextOffset = new Vector2(9f, 8f);
+            TreeNodeRender template = null;
+            try
+            {
+                template = StackCountField?.GetValue(element) as TreeNodeRender;
+            }
+            catch
+            {
+                // 拿不到模板就用默认字体
+            }
+
+            TMP_Text txt = null;
+            RectTransform rect = null;
+
+            // 首选：游戏自己的文字节点工厂
+            try
+            {
+                TreeNodeRender node = TreeNodeRender.InstantiateText();
+                if (node != null)
+                {
+                    node.SetParent(middle);
+                    if (node.text != null)
+                    {
+                        txt = node.text;
+                        rect = node.rectTransform;
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                if (_textLogged < 6)
+                {
+                    _textLogged++;
+                    QLog.Warn("荧光莓文字：InstantiateText 失败 —— " + e.GetType().Name + " " + e.Message);
+                }
+            }
+
+            // 兜底：自己建一个 TMP 文本
+            if (txt == null)
+            {
+                try
+                {
+                    var go = new GameObject("QoL Berry Grade", typeof(RectTransform));
+                    rect = go.GetComponent<RectTransform>();
+                    rect.SetParent(middle.rectTransform, false);
+                    txt = go.AddComponent<TextMeshProUGUI>();
+                }
+                catch (Exception e)
+                {
+                    if (_textLogged < 6)
+                    {
+                        _textLogged++;
+                        QLog.Warn("荧光莓文字：自建文本失败 —— " + e.GetType().Name + " " + e.Message);
+                    }
+
+                    return null;
+                }
+            }
+
+            if (template != null && template.text != null)
+            {
+                try
+                {
+                    txt.font = template.text.font;
+                    txt.fontSharedMaterial = template.text.fontSharedMaterial;
+                }
+                catch
+                {
+                    // 字体借不到就先这样，至少字能出来
+                }
+            }
+
+            rect.sizeDelta = new Vector2(40f, 12f);
+            rect.anchoredPosition = TextOffset;
+
+            txt.alignment = TextAlignmentOptions.Center;
+            txt.fontStyle = FontStyles.Bold;
+            txt.fontSize = TextSize;
+            txt.raycastTarget = false;
+            txt.outlineWidth = 0.25f;
+            txt.outlineColor = new Color32(36, 35, 53, 255);
+
+            if (_textLogged < 6)
+            {
+                _textLogged++;
+                Vector2 icon = element.background != null && element.background.rectTransform != null
+                    ? element.background.rectTransform.sizeDelta
+                    : Vector2.zero;
+                QLog.Info("荧光莓文字：已创建，图标 " + icon.x + "x" + icon.y
+                          + "，字体 " + (txt.font != null ? txt.font.name : "无")
+                          + "，字号 " + TextSize + "，偏移 " + TextOffset.x + "," + TextOffset.y);
+            }
+
+            var result = new TextRef { Text = txt, Rect = rect };
+            TextNodes.Add(element, result);
+            return result;
+        }
 
         private static string GradeText(int grade)
         {
@@ -303,10 +433,10 @@ namespace QoL
         {
             switch (grade)
             {
-                case 1: return new Color32(196, 138, 245, 255);   // 丙
-                case 2: return new Color32(240, 196, 71, 255);    // 乙
-                case 3: return new Color32(79, 209, 122, 255);    // 甲
-                default: return new Color32(230, 75, 75, 255);    // 丁
+                case 1: return new Color32(196, 138, 245, 255);   // 丙 紫
+                case 2: return new Color32(240, 196, 71, 255);    // 乙 黄
+                case 3: return new Color32(79, 209, 122, 255);    // 甲 绿
+                default: return new Color32(235, 96, 96, 255);    // 丁 红
             }
         }
 
@@ -327,6 +457,16 @@ namespace QoL
             {
                 // 鉴定钩子失败不影响鉴定本身
             }
+        }
+
+        private static string ModeName()
+        {
+            if (ShowText)
+            {
+                return "文字";
+            }
+
+            return ShowScore ? "数字" : (ShowKanji ? "甲乙丙丁" : "符号");
         }
 
         private static void OnToggleChanged(bool _)
