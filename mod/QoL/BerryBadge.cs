@@ -36,17 +36,20 @@ namespace QoL
         private const string GradeTag = "WINE_BERRY_QUALITY_BADGES_GRADE_V2";
         private const string LegacyGradeTag = "WINE_BERRY_QUALITY_BADGES_GRADE_V1";
 
-        /// <summary>
-        /// 是否不需要放大镜鉴定就显示角标。
-        /// 参考模组默认关（只显示鉴定过的），我们默认开——不然刚进游戏满背包看不到任何标记，
-        /// 等于功能不存在。想看原版玩法就改成 false。
-        /// </summary>
-        private static readonly bool WithoutMagnifier = true;
+        /// <summary>「显示方式」里代表数字档的选项文字，和 QoLSettings 里的choices 必须一致。</summary>
+        private const string ScoreChoice = "酿造评分";
 
-        /// <summary>
-        /// false = 符号模式（默认，和参考模组一致）；true = 数字模式（+2 / +1 / +0 / -1）。
-        /// </summary>
-        private const bool ShowScore = false;
+        /// <summary>设置来源。为空时按「全开、符号模式」的默认行为跑。</summary>
+        private static QoLSettings _settings;
+
+        private static bool Enabled => _settings == null || _settings.BerryBadge.Value;
+
+        /// <summary>免鉴定：开启时直接读 condition，关闭时只认鉴定过的标签。</summary>
+        private static bool WithoutMagnifier => _settings == null || _settings.BerrySkipMagnifier.Value;
+
+        /// <summary>true = 数字模式（+2 / +1 / +0 / -1）；false = 符号模式。</summary>
+        private static bool ShowScore =>
+            _settings != null && _settings.BerryDisplayMode.Value == ScoreChoice;
 
         private static Harmony _harmony;
         private static bool _warned;
@@ -77,12 +80,14 @@ namespace QoL
         // 注册
         // ------------------------------------------------------------------
 
-        internal static void Apply()
+        internal static void Apply(QoLSettings settings)
         {
             if (_harmony != null)
             {
                 return;
             }
+
+            _settings = settings;
 
             try
             {
@@ -109,7 +114,16 @@ namespace QoL
                         postfix: new HarmonyMethod(typeof(BerryBadge), nameof(AfterInspect)));
                 }
 
-                QLog.Info("荧光莓徽标：已挂载（符号模式，免鉴定=" + WithoutMagnifier + "）");
+                // 设置一改就重画所有已显示的格子，不用退出去再进背包
+                if (settings != null)
+                {
+                    settings.BerryBadge.OnChanged += OnToggleChanged;
+                    settings.BerrySkipMagnifier.OnChanged += OnToggleChanged;
+                    settings.BerryDisplayMode.OnChanged += OnModeChanged;
+                }
+
+                QLog.Info("荧光莓徽标：已挂载（" + (ShowScore ? "数字" : "符号") +
+                          "模式，免鉴定=" + WithoutMagnifier + "）");
             }
             catch (Exception e)
             {
@@ -126,6 +140,14 @@ namespace QoL
             catch
             {
                 // 卸载失败不影响退出
+            }
+
+            if (_settings != null)
+            {
+                _settings.BerryBadge.OnChanged -= OnToggleChanged;
+                _settings.BerrySkipMagnifier.OnChanged -= OnToggleChanged;
+                _settings.BerryDisplayMode.OnChanged -= OnModeChanged;
+                _settings = null;
             }
 
             _harmony = null;
@@ -190,6 +212,16 @@ namespace QoL
             }
         }
 
+        private static void OnToggleChanged(bool _)
+        {
+            RefreshDisplayed();
+        }
+
+        private static void OnModeChanged(string _)
+        {
+            RefreshDisplayed();
+        }
+
         internal static bool IsBerry(GameItem item)
         {
             return item != null
@@ -199,7 +231,7 @@ namespace QoL
 
         private static void Attach(GameItem item)
         {
-            if (!IsBerry(item) || Bindings.TryGetValue(item, out _))
+            if (!Enabled || !IsBerry(item) || Bindings.TryGetValue(item, out _))
             {
                 return;
             }
@@ -227,7 +259,7 @@ namespace QoL
         {
             List<ItemSpriteModifier> list = previous?.Invoke(item);
 
-            if (!IsBerry(item))
+            if (!Enabled || !IsBerry(item))
             {
                 return list;
             }

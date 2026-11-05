@@ -86,7 +86,7 @@ namespace QoL
                 DebugPanelZh.Apply();
 
                 // 荧光莓品质徽标：图标右上角标出酿酒分数（+2/+1/+0/-1）
-                BerryBadge.Apply();
+                BerryBadge.Apply(Settings);
 
                 QLog.Info("已启用：" + Settings.Count + " 项设置，配置文件 " + Settings.FilePath + "，日志路径 " + QLog.LogFilePath);
             }

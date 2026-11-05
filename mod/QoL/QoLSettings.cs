@@ -76,6 +76,15 @@ namespace QoL
         /// <summary>详细日志记录：将详细调试信息与排查日志写入控制台与独立日志文件。</summary>
         internal ConfigEntry<bool> VerboseLogging { get; }
 
+        /// <summary>在荧光莓图标右上角显示品质角标。</summary>
+        internal ConfigEntry<bool> BerryBadge { get; }
+
+        /// <summary>不需要放大镜鉴定就显示角标。</summary>
+        internal ConfigEntry<bool> BerrySkipMagnifier { get; }
+
+        /// <summary>角标显示方式：符号 / 酿造评分。</summary>
+        internal ConfigEntry<string> BerryDisplayMode { get; }
+
         internal int Count => _config.Entries.Count;
 
         internal string FilePath => _config.FilePath;
@@ -250,6 +259,29 @@ namespace QoL
                 "开发者",
                 () => "详细日志记录",
                 () => "开启后，模组会在控制台及 ModConfigs/local.qol.log 中输出详细诊断日志（包括模块初始化、快捷键触发、按键录入、右键菜单构建等）。排查故障时请保持开启，遇到问题只需复制该日志文件。");
+
+            // ---------------- 荧光莓 ----------------
+            BerryBadge = _config.Define(
+                "berry.badge",
+                true,
+                "荧光莓",
+                () => "显示品质角标",
+                () => "在荧光莓图标右上角标出品质。绿十字＝小果（酿酒 +2）、黄横杠＝标准（+1）、紫×＝未熟或过熟（+0）、红!＝发霉（-1）。");
+
+            BerrySkipMagnifier = _config.Define(
+                "berry.skip_magnifier",
+                true,
+                "荧光莓",
+                () => "无需放大镜",
+                () => "开启后，所有荧光莓直接显示角标；关闭后只有用放大镜鉴定过的才显示，保留原版的鉴定玩法。");
+
+            BerryDisplayMode = _config.Define(
+                "berry.display_mode",
+                "符号",
+                "荧光莓",
+                () => "显示方式",
+                new[] { "符号", "酿造评分" },
+                () => "符号：用十字/横杠/×/! 表示品质；酿造评分：直接写出这颗粒子能给的酒分（+2 / +1 / +0 / -1）。");
 
             // 把定义（可能带新的默认值）写回文件
             _config.Save();
