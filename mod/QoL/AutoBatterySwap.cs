@@ -15,7 +15,8 @@ namespace QoL
     ///     统一入队后由 Tick 补换。换下来的旧电池落回候选原位，候选来自充电器就自动回充。
     ///   主动型工具（水瓶打印机、箱子分配器…）：平时不耗电，电池常驻在里面反而充不了。
     ///     patch MachineryButton.OnSelect，在按钮回调之前若电池槽是空的就临时装一块，
-    ///     回调结束立刻取回原处。同一次点击就能成功使用，用完不占电池。
+    ///     同一次点击就能成功使用。电池会在槽里停留 ReturnDelay 秒（让玩家看得到电被扣掉），
+    ///     再自动还回充电器；连续点击会重置计时，用完不长期占用电池。
     ///
     /// 判定取自 BatteryManager 的严谨内核（先验原生 CanDrawPowerSource、Improves 防倒换、
     /// 按能量降序），触发取自 DangpuPlus（早晨 + 取电失败），并修掉两边已知的几个坑：
@@ -27,6 +28,8 @@ namespace QoL
         private const string HarmonyId = "local.qol.auto_battery_swap";
         private const float TickInterval = 0.2f;
         private const float RetryCooldown = 3f;
+        // 主动型工具用完电池后，先让它在槽里显示一会儿再还，避免「空槽却产出物品」
+        private const float ReturnDelay = 1.5f;
         private const int MaxClosureDepth = 3;
 
         internal const string Off = "关闭";
@@ -48,9 +51,17 @@ namespace QoL
         private static readonly Dictionary<int, float> Cooldown = new Dictionary<int, float>();
         // 通过按钮回调识别出「主动型」的机器：不给它们装常驻电池
         private static readonly HashSet<int> ButtonDriven = new HashSet<int>();
-        // 主动型：本次按钮点击临时装进去的电池 + 它原来的容器
-        private static readonly Dictionary<int, GameItem> Inserted = new Dictionary<int, GameItem>();
-        private static readonly Dictionary<int, GameInventory> InsertedFrom = new Dictionary<int, GameInventory>();
+        // 主动型：临时装进去、等待展示完再还回充电器的电池
+        private static readonly Dictionary<int, PendingReturn> Pending = new Dictionary<int, PendingReturn>();
+
+        private sealed class PendingReturn
+        {
+            public GameItem Cell;
+            public GameInventory From;
+            public GameSlotInventory Slot;
+            public float At;
+            public bool Warned;
+        }
 
         private static GameItem _buttonMachine;
         private static float _nextTick;
@@ -147,6 +158,17 @@ namespace QoL
 
         internal static void Remove()
         {
+            // 卸载前把还在展示期的电池还回去，别留在机器里变成常驻电池。
+            try
+            {
+                foreach (PendingReturn p in Pending.Values)
+                {
+                    if (p != null && p.Slot != null && p.Slot.childItem == p.Cell)
+                        ReturnCell(p.Cell, p.From);
+                }
+            }
+            catch { }
+
             try
             {
                 ModHook.OnGoingSleepLate -= OnMorning;
@@ -165,8 +187,7 @@ namespace QoL
             Draws.Clear();
             Cooldown.Clear();
             ButtonDriven.Clear();
-            Inserted.Clear();
-            InsertedFrom.Clear();
+            Pending.Clear();
         }
 
         // ---------------------------------------------------------------
@@ -281,8 +302,14 @@ namespace QoL
                 GameInventory from = best.parentInventory;
                 if (!Install(slot, best)) return;
 
-                Inserted[machine.uniqueId] = best;
-                InsertedFrom[machine.uniqueId] = from;
+                // 先留在槽里展示一会儿，让玩家看得到「有电池、电量掉了」，再自动还回去
+                Pending[machine.uniqueId] = new PendingReturn
+                {
+                    Cell = best,
+                    From = from,
+                    Slot = slot,
+                    At = Time.unscaledTime + ReturnDelay
+                };
             }
             catch (Exception e)
             {
@@ -296,36 +323,27 @@ namespace QoL
             _buttonMachine = null;
             if (machine == null) return;
 
-            int id = machine.uniqueId;
-            GameItem cell;
-            if (!Inserted.TryGetValue(id, out cell)) return;
-            Inserted.Remove(id);
-
-            GameInventory from;
-            InsertedFrom.TryGetValue(id, out from);
-            InsertedFrom.Remove(id);
-
-            try
+            // 连续打印时重置展示计时，别刚装上就被还走
+            PendingReturn p;
+            if (Pending.TryGetValue(machine.uniqueId, out p) &&
+                p != null && p.Slot != null && p.Slot.childItem == p.Cell)
             {
-                if (cell != null) ReturnCell(cell, from);
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("自动换电池：用完取回失败 —— " + e.Message);
+                p.At = Time.unscaledTime + ReturnDelay;
             }
         }
 
         /// <summary>把临时电池放回原来的容器（通常是充电器），再退到店内两个外层格子。</summary>
-        private static void ReturnCell(GameItem cell, GameInventory from)
+        private static bool ReturnCell(GameItem cell, GameInventory from)
         {
-            if (TryMoveInto(from, cell)) return;
+            if (TryMoveInto(from, cell)) return true;
 
             EmporiumEntry ee = EmporiumEntry.Instance;
-            if (ee == null) return;
-            if (TryMoveInto(ee.backInvinvElement, cell)) return;
-            if (TryMoveInto(ee.invElement, cell)) return;
-
-            QLog.Warn("自动换电池：没地方放回电池，暂时留在机器里");
+            if (ee != null)
+            {
+                if (TryMoveInto(ee.backInvinvElement, cell)) return true;
+                if (TryMoveInto(ee.invElement, cell)) return true;
+            }
+            return false;
         }
 
         private static bool TryMoveInto(GameInventory target, GameItem cell)
@@ -395,6 +413,13 @@ namespace QoL
 
         internal static void Tick(float dt)
         {
+            // 待归还的电池不受功能开关影响：就算把设置关了也要还，别留在机器里
+            if (Pending.Count > 0)
+            {
+                try { ProcessReturns(); }
+                catch (Exception e) { QLog.Warn("自动换电池：归还检查失败 —— " + e.Message); }
+            }
+
             if (!Enabled || Queue.Count == 0) return;
             if (Time.unscaledTime < _nextTick) return;
             _nextTick = Time.unscaledTime + TickInterval;
@@ -408,6 +433,65 @@ namespace QoL
             {
                 QLog.Warn("自动换电池：补换失败 —— " + e.Message);
             }
+        }
+
+        /// <summary>展示时间到了就把临时电池还回充电器；玩家动过就放弃，拖拽时暂缓。</summary>
+        private static void ProcessReturns()
+        {
+            float now = Time.unscaledTime;
+            bool blocked = !CanOperate();
+            List<int> done = null;
+
+            foreach (KeyValuePair<int, PendingReturn> kv in Pending)
+            {
+                PendingReturn p = kv.Value;
+                if (p == null) { MarkDone(ref done, kv.Key); continue; }
+                if (now < p.At) continue;
+
+                bool stillThere = false;
+                try { stillThere = p.Slot != null && p.Slot.childItem == p.Cell; }
+                catch { }
+                if (!stillThere)
+                {
+                    // 玩家拖走了、或换了别的电池：直接放弃，不碰任何东西
+                    MarkDone(ref done, kv.Key);
+                    continue;
+                }
+
+                if (blocked) continue; // 正在拖拽或交换缓冲区占用，等下一帧
+
+                bool ok = false;
+                try { ok = ReturnCell(p.Cell, p.From); }
+                catch (Exception e)
+                {
+                    if (!p.Warned) QLog.Warn("自动换电池：用完取回失败 —— " + e.Message);
+                    p.Warned = true;
+                }
+
+                if (ok)
+                {
+                    MarkDone(ref done, kv.Key);
+                }
+                else
+                {
+                    // 没地方放就过几秒再试，绝不让电池变成常驻
+                    p.At = now + RetryCooldown;
+                    if (!p.Warned)
+                    {
+                        QLog.Warn("自动换电池：没地方放回电池，稍后重试");
+                        p.Warned = true;
+                    }
+                }
+            }
+
+            if (done != null)
+                for (int i = 0; i < done.Count; i++) Pending.Remove(done[i]);
+        }
+
+        private static void MarkDone(ref List<int> list, int key)
+        {
+            if (list == null) list = new List<int>();
+            list.Add(key);
         }
 
         private static void ProcessQueue()
@@ -466,10 +550,23 @@ namespace QoL
                     continue;
                 }
 
+                GameInventory bestFrom = best.parentInventory; // 交换前记下，供归还用
                 if (SwapOrInstall(slot, old, best))
                 {
                     used.Add(best.uniqueId);
                     Cooldown.Remove(id);
+
+                    // 展示期内电不够又补换了一块：让新电池接着展示完再还，
+                    // 否则它会被留在主动型工具里变成常驻电池。
+                    PendingReturn pending;
+                    if (Pending.TryGetValue(id, out pending) && pending != null)
+                    {
+                        pending.Cell = best;
+                        pending.From = bestFrom;
+                        pending.Slot = slot;
+                        pending.At = now + ReturnDelay;
+                        pending.Warned = false;
+                    }
                 }
                 else
                 {
