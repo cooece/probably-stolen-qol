@@ -7,7 +7,7 @@ namespace QoL
 {
     /// <summary>
     /// 交易结果弹窗：顾客买/卖成交后，先后弹两条提示——
-    ///   1. 立即弹金额：「支付宝到账：+322元」/「支付宝扣款：-322元」
+    ///   1. 金额：「支付宝到账：+68元」/「支付宝扣款：-68元」
     ///   2. 约 1.5 秒后再弹声望：「上层区声望：+0.006」
     ///
     /// 行为参考工坊「声望增加显示 (Reputation Pop)」与「到账语音播报」，实现自己写。
@@ -15,8 +15,10 @@ namespace QoL
     ///
     /// 实现：Harmony 拦截 StoreReputation.OnItemTraded（买、卖结算声望的统一入口）——
     ///   - prefix 记录该阵营声望的旧值
-    ///   - postfix 读新值求差得实际声望，金额立即弹、声望压进延迟队列
-    ///   - Tick（由 QoLUpdate 驱动）到点后弹声望
+    ///   - postfix 用第 3 个参数 originalValue 取实际成交金额（= playerCash 的增减），
+    ///     累加进整单金额；第 2 个参数 value 是声望基数、会被阵营倍率改写，不能当钱用
+    ///   - 「出售 N 物品」会逐件回调，Tick 等 0.15s 静默后弹一条合计，避免气泡互相覆盖
+    ///   - 声望同样压进延迟队列，到点后弹
     ///   都用游戏自带的 ReputationUIManager.Notify(message) 气泡，不画新 UI。
     /// </summary>
     internal static class TradeResultPopup
@@ -24,10 +26,17 @@ namespace QoL
         private const string HarmonyId = "local.qol.trade_result";
         private const float RepDelaySeconds = 1.5f;
 
+        /// <summary>整单结算的静默时间。「出售 N 物品」会逐件回调，等这一串结束再弹一条合计。</summary>
+        private const float CashFlushDelay = 0.15f;
+
         private static Harmony _harmony;
 
         private static double _repBefore;
         private static bool _repCaptured;
+
+        /// <summary>本单累计成交金额（正数=到账，负数=扣款）。</summary>
+        private static long _pendingCash;
+        private static float _cashFlushTimer;
 
         /// <summary>估价结算前的现金，用于算鉴定费收入。</summary>
         private static int _cashBeforeFee;
@@ -64,6 +73,15 @@ namespace QoL
             {
                 Debug.LogWarning(ModEntry.Tag + "交易结果弹窗：找不到 OnItemTraded");
                 return;
+            }
+
+            // 金额必须取第 3 个参数 originalValue（= playerCash 实际增减的数额）。
+            // 第 2 个参数 value 是声望基数，会被阵营/外交倍率改写，不是钱。
+            // 参数名对不上时 Harmony 会静默传 0，这里提前发现，避免游戏更新后金额恒为 0。
+            var tradeParams = method.GetParameters();
+            if (tradeParams.Length < 3 || tradeParams[2].Name != "originalValue")
+            {
+                Debug.LogWarning(ModEntry.Tag + "交易结果弹窗：OnItemTraded 参数签名变了，金额可能不准，请检查");
             }
 
             _harmony.Patch(method,
@@ -113,11 +131,32 @@ namespace QoL
             }
 
             _pendingRepMessage = null;
+            _pendingCash = 0;
+            _cashFlushTimer = 0f;
         }
 
         /// <summary>每帧驱动延迟弹出的声望提示（由 QoLUpdate 调用）。</summary>
         internal static void Tick(float dt)
         {
+            // 整单金额：最后一次逐件结算后再静默一小会儿，把这一串成交合成一条合计。
+            if (_cashFlushTimer > 0f)
+            {
+                _cashFlushTimer -= dt;
+                if (_cashFlushTimer <= 0f)
+                {
+                    long cash = _pendingCash;
+                    _pendingCash = 0;
+                    if (cash != 0)
+                    {
+                        ReputationUIManager cashUi = ReputationUIManager.Instance;
+                        if (cashUi != null)
+                        {
+                            NotifyCash(cashUi, cash);
+                        }
+                    }
+                }
+            }
+
             if (string.IsNullOrEmpty(_pendingRepMessage))
             {
                 return;
@@ -156,7 +195,7 @@ namespace QoL
             }
         }
 
-        private static void Postfix(string factionId, int value, bool isPlayerSold)
+        private static void Postfix(string factionId, int originalValue, bool isPlayerSold)
         {
             if (!Enabled || !_repCaptured)
             {
@@ -172,25 +211,21 @@ namespace QoL
                 }
 
                 double repDelta = rep.GetReputationExact() - _repBefore;
-                long cash = isPlayerSold ? value : -value;
+
+                // originalValue 才是 playerCash 真正增减的数额（已含顾客预算截断）。
+                // 千万别用第 2 个参数 value：那是声望基数，会被阵营倍率 / 外交加成改写，不是钱。
+                long cash = isPlayerSold ? originalValue : -originalValue;
+
+                // 1. 金额累计：SellMultiple 会逐件回调，等整单结束由 Tick 弹一条合计
+                if (cash != 0)
+                {
+                    _pendingCash += cash;
+                    _cashFlushTimer = CashFlushDelay;
+                }
 
                 if (Math.Abs(repDelta) < 0.000001 && cash == 0)
                 {
                     return;
-                }
-
-                ReputationUIManager ui = ReputationUIManager.Instance;
-                if (ui == null)
-                {
-                    return;
-                }
-
-                // 1. 立即弹金额
-                if (cash != 0)
-                {
-                    ui.Notify(cash > 0
-                        ? "支付宝到账：+" + cash.ToString(CultureInfo.InvariantCulture) + "元"
-                        : "支付宝扣款：-" + Math.Abs(cash).ToString(CultureInfo.InvariantCulture) + "元");
                 }
 
                 // 2. 声望压进延迟队列，1.5 秒后再弹（避免和金额气泡叠在一起）
@@ -205,6 +240,14 @@ namespace QoL
             {
                 Debug.LogWarning(ModEntry.Tag + "交易结果弹窗出错：" + e.Message);
             }
+        }
+
+        /// <summary>弹一条现金气泡。金额用 long，兼容逐件累加后的整单合计。</summary>
+        private static void NotifyCash(ReputationUIManager ui, long cash)
+        {
+            ui.Notify(cash > 0
+                ? "支付宝到账：+" + cash.ToString(CultureInfo.InvariantCulture) + "元"
+                : "支付宝扣款：-" + Math.Abs(cash).ToString(CultureInfo.InvariantCulture) + "元");
         }
 
         private static string BuildRepMessage(string factionId, double repDelta, double currentRep, long cash)
@@ -263,9 +306,7 @@ namespace QoL
                     return;
                 }
 
-                ui.Notify(delta > 0
-                    ? "支付宝到账：+" + delta.ToString(CultureInfo.InvariantCulture) + "元"
-                    : "支付宝扣款：-" + Math.Abs(delta).ToString(CultureInfo.InvariantCulture) + "元");
+                NotifyCash(ui, delta);
             }
             catch (Exception e)
             {
@@ -349,9 +390,7 @@ namespace QoL
                 ReputationUIManager ui = ReputationUIManager.Instance;
                 if (ui != null)
                 {
-                    ui.Notify(value > 0
-                        ? "支付宝到账：+" + value.ToString(CultureInfo.InvariantCulture) + "元"
-                        : "支付宝扣款：-" + Math.Abs(value).ToString(CultureInfo.InvariantCulture) + "元");
+                    NotifyCash(ui, value);
                 }
             }
             catch (Exception e)
