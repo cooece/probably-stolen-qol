@@ -1,34 +1,46 @@
 @echo off
-chcp 65001 >nul
-rem ä¸Šä¼  / æ›´æ–°åˆ›æ„å·¥åŠç‰©å“ã€‚ç”¨æ³•ï¼š publish.bat ä½ çš„Steamè´¦å·
-rem ç¬¬ä¸€æ¬¡ä¼šè¦æ±‚è¾“å…¥ Steam å¯†ç å’Œé‚®ç®±éªŒè¯ç ï¼Œä¹‹åä¼šè®°ä½ç™»å½•ã€‚
+rem ÉÏ´« / ¸üĞÂ´´Òâ¹¤·»ÎïÆ·¡£Ë«»÷¼´¿É£¬»áÌáÊ¾ÊäÈë Steam ÕËºÅ¡£
+rem µÚÒ»´Î»áÒªÇóÊäÈëÃÜÂëºÍ Steam Guard ÑéÖ¤Âë£¬Ö®ºó»á¼Ç×¡µÇÂ¼¡£
 
-if "%~1"=="" (
-    echo ç”¨æ³•ï¼š publish.bat ä½ çš„Steamè´¦å·
+set "ACCOUNT=%~1"
+if "%ACCOUNT%"=="" set /p ACCOUNT=ÇëÊäÈëÄãµÄ Steam ÕËºÅ£¨µÇÂ¼Ãû£©£º 
+if "%ACCOUNT%"=="" (
+    echo Ã»ÓĞÊäÈëÕËºÅ£¬ÒÑÈ¡Ïû¡£
     pause
     exit /b 1
 )
 
-set "STEAMCMD=C:\steamcmd\steamcmd.exe"
-if not exist "%STEAMCMD%" (
-    set "STEAMCMD=%ProgramFiles(x86)%\Steam\steamcmd.exe"
-)
-if not exist "%STEAMCMD%" (
-    echo æ‰¾ä¸åˆ° steamcmd.exeã€‚
-    echo å…ˆåˆ°è¿™é‡Œä¸‹è½½ï¼š https://developer.valvesoftware.com/wiki/SteamCMD
-    echo è§£å‹åˆ° C:\steamcmd åé‡æ–°è¿è¡Œæœ¬æ–‡ä»¶ã€‚
+rem °´Ë³ĞòÔÚ³£¼ûÎ»ÖÃÕÒ steamcmd.exe£¨Steam Ä¿Â¼ÀïÄÇ·İ¡¢¶ÀÁ¢½âÑ¹µÄÄÇ·İ¶¼Ëã£©
+set "STEAMCMD="
+for %%P in (
+    "C:\steamcmd\steamcmd.exe"
+    "C:\steamcmd\steamcmd\steamcmd.exe"
+    "%ProgramFiles(x86)%\Steam\steamcmd\steamcmd.exe"
+    "%ProgramFiles(x86)%\Steam\steamcmd.exe"
+    "%~dp0steamcmd\steamcmd.exe"
+) do if not defined STEAMCMD if exist %%~P set "STEAMCMD=%%~P"
+
+if not defined STEAMCMD (
+    echo ÕÒ²»µ½ steamcmd.exe¡£
+    echo µ½ https://developer.valvesoftware.com/wiki/SteamCMD ÏÂÔØ£¬
+    echo ½âÑ¹µ½ C:\steamcmd ºóÖØĞÂÔËĞĞ±¾ÎÄ¼ş¡£
     pause
     exit /b 1
 )
 
 if not exist "%~dp0workshop\mod.vdf" (
-    echo æ‰¾ä¸åˆ° workshop\mod.vdfï¼Œå…ˆè¿è¡Œä¸€æ¬¡ package.ps1ã€‚
+    echo ÕÒ²»µ½ workshop\mod.vdf£¬ÏÈÔËĞĞÒ»´Î package.bat¡£
     pause
     exit /b 1
 )
 
-echo æ­£åœ¨ä¸Šä¼ ï¼Œæ§åˆ¶å°ä¼šæ‰“å°ç‰©å“ IDâ€¦â€¦
-"%STEAMCMD%" +login %1 +workshop_build_item "%~dp0workshop\mod.vdf" +quit
 echo.
-echo å®Œæˆå mod.vdf é‡Œçš„ publishedfileid ä¼šè¢«å¡«å…¥ç‰©å“ IDï¼Œä¸‹æ¬¡è·‘åŒä¸€ä¸ªæ–‡ä»¶å°±æ˜¯æ›´æ–°ã€‚
+echo Ê¹ÓÃ steamcmd£º%STEAMCMD%
+echo ÕËºÅ£º%ACCOUNT%
+echo ÕıÔÚÉÏ´«£¬Íê³Éºó»á´òÓ¡ÎïÆ· ID¡­¡­
+echo.
+"%STEAMCMD%" +login "%ACCOUNT%" +workshop_build_item "%~dp0workshop\mod.vdf" +quit
+echo.
+echo ÉÏ´«½áÊø¡£Èô³É¹¦£¬workshop\mod.vdf ÀïµÄ publishedfileid ÒÑÓÉ steamcmd ÌîÉÏÎïÆ· ID£»
+echo ÒÔºóÅÜÍ¬Ò»¸öÎÄ¼ş¾ÍÊÇ¸üĞÂÕâÒ»ÌõÄ¿£¬²»ÒªÉ¾Ëü¡£
 pause
