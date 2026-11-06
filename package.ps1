@@ -62,20 +62,10 @@ if (Test-Path $assets) {
 }
 Get-ChildItem $src -Filter *.png -File | ForEach-Object { Copy-Item $_.FullName (Join-Path $out $_.Name) -Force }
 
-# 工坊缩略图：优先用 preview.jpg（体积小，网页和 steamcmd 都更容易过），
-# 没有 JPG 才退回 PNG。图片同时会打进内容文件夹，玩家下载后游戏内列表也能显示。
-if (Test-Path $previewJpg) {
-    Copy-Item $previewJpg (Join-Path $out 'preview.jpg')
-}
-elseif (Test-Path $preview) {
-    $size = (Get-Item $preview).Length
-    if ($size -gt 1MB) {
-        Write-Host ('警告：preview.png 有 {0:N0} KB，建议压到 1 MB 以内。' -f ($size / 1KB)) -ForegroundColor Yellow
-    }
-    Copy-Item $preview (Join-Path $out 'preview.png')
-}
-else {
-    Write-Host '提示：还没有 workshop\preview.png 或 preview.jpg，工坊物品会没有横幅图。' -ForegroundColor Yellow
+# 封面图不进内容包：封面（preview.jpg）只放在 workshop\ 下，由网页「添加/编辑图片」上传。
+# 这样玩家的下载包里没有重复图片，体积最小。
+if ((Test-Path $preview) -and ((Get-Item $preview).Length -gt 1MB)) {
+    Write-Host '提示：workshop\preview.png 超过 1 MB，网页上传可能被拒，建议改用 preview.jpg。' -ForegroundColor Yellow
 }
 
 if (-not (Test-Path $vdfDir)) { New-Item -ItemType Directory -Path $vdfDir -Force | Out-Null }
