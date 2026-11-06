@@ -13,6 +13,15 @@ namespace QoL
     {
         private readonly ModConfig _config;
 
+        // 下拉选项与消费方共用同一份常量，避免「界面改了名字、代码还在匹配旧串」。
+        internal const string DebugPanelOff = "关闭";
+        internal const string DebugPanelF9Only = "仅 F9";
+
+        internal const string BadgeModeOff = "关闭";
+        internal const string BadgeModeJiaYi = "甲乙丙丁";
+        internal const string BadgeModeGrade = "优良中差";
+        internal const string BadgeModeAbcd = "ABCD";
+
         /// <summary>显示物品描述文字和"双击以打开"这类操作提示。关掉只留数值。</summary>
         internal ConfigEntry<bool> ShowItemDescription { get; }
 
@@ -67,22 +76,13 @@ namespace QoL
         /// <summary>长按触发框选所需的按住时长（毫秒文本）。</summary>
         internal ConfigEntry<string> BoxSelectHoldMs { get; }
 
-        /// <summary>汉化游戏 F9 调试面板，并在面板顶部加前进/后退翻页。</summary>
-        internal ConfigEntry<bool> HanifyDebugPanel { get; }
-
-        /// <summary>额外打开调试面板的快捷键，可自定义。</summary>
-        internal ConfigEntry<string> DebugPanelHotkey { get; }
+        /// <summary>调试面板：一个下拉同时管开关与自定义快捷键（关闭 / 仅 F9 / 某个 F 键）。</summary>
+        internal ConfigEntry<string> DebugPanelMode { get; }
 
         /// <summary>详细日志记录：将详细调试信息与排查日志写入控制台与独立日志文件。</summary>
         internal ConfigEntry<bool> VerboseLogging { get; }
 
-        /// <summary>在荧光莓图标右上角显示品质角标。</summary>
-        internal ConfigEntry<bool> BerryBadge { get; }
-
-        /// <summary>不需要放大镜鉴定就显示角标。</summary>
-        internal ConfigEntry<bool> BerrySkipMagnifier { get; }
-
-        /// <summary>角标文字写法：文字 / 优良中差 / ABCD。</summary>
+        /// <summary>荧光莓角标：一个下拉同时管开关与呈现方式（含「关闭」）。</summary>
         internal ConfigEntry<string> BerryDisplayMode { get; }
 
         internal int Count => _config.Entries.Count;
@@ -238,20 +238,14 @@ namespace QoL
                 () => "在物品上按住多久才转成框选。默认 180 毫秒；觉得容易误触发就调大，觉得要等太久就调小。只有按住期间鼠标几乎没动才会触发，一移动就照常拿物品。");
 
             // ---------------- 开发者 ----------------
-            HanifyDebugPanel = _config.Define(
-                "dev.hanify_panel",
-                true,
-                "开发者",
-                () => "汉化调试面板（F9）",
-                () => "把游戏自带 F9 调试面板的按钮、分组、窗口标题译成中文，并额外提供一个可自定义的开关键（默认 F10）。面板保持游戏原生结构，不改动布局。关掉即还原成英文原版。");
-
-            DebugPanelHotkey = _config.Define(
+            // 键名沿用旧版 dev.panel_hotkey，玩家已经选过的按键不会丢。
+            DebugPanelMode = _config.Define(
                 "dev.panel_hotkey",
                 "F10",
                 "开发者",
-                () => "调试面板快捷键",
-                new[] { "无", "F5", "F6", "F7", "F8", "F10", "F11", "F12" },
-                () => "除了游戏自带的 F9，再给调试面板一个可自定义的开关键。默认 F10，选「无」就只用 F9。改完立即生效，不用重启。");
+                () => "汉化调试面板",
+                new[] { DebugPanelOff, DebugPanelF9Only, "F5", "F6", "F7", "F8", "F10", "F11", "F12" },
+                () => "一个设置管全部：选「关闭」＝不汉化也不加键，还原英文原版；选「仅 F9」＝只汉化，沿用游戏自带 F9；选某个 F 键＝汉化并额外用该键开关面板。改完立即生效，不用重启。");
 
             VerboseLogging = _config.Define(
                 "dev.verbose_logging",
@@ -261,27 +255,14 @@ namespace QoL
                 () => "开启后，模组会在控制台及 ModConfigs/local.qol.log 中输出详细诊断日志（包括模块初始化、快捷键触发、按键录入、右键菜单构建等）。排查故障时请保持开启，遇到问题只需复制该日志文件。");
 
             // ---------------- 荧光莓 ----------------
-            BerryBadge = _config.Define(
-                "berry.badge",
-                true,
-                "荧光莓",
-                () => "显示品质角标",
-                () => "在荧光莓图标右上角标出品质。绿十字＝小果（酿酒 +2）、黄横杠＝标准（+1）、紫×＝未熟或过熟（+0）、红!＝发霉（-1）。");
-
-            BerrySkipMagnifier = _config.Define(
-                "berry.skip_magnifier",
-                true,
-                "荧光莓",
-                () => "无需放大镜",
-                () => "开启后，所有荧光莓直接显示角标；关闭后只有用放大镜鉴定过的才显示，保留原版的鉴定玩法。");
-
+            // 键名沿用旧版 berry.display_mode，玩家已选的写法不会丢。
             BerryDisplayMode = _config.Define(
                 "berry.display_mode",
-                "甲乙丙丁",
+                BadgeModeJiaYi,
                 "荧光莓",
-                () => "显示方式",
-                new[] { "甲乙丙丁", "优良中差", "ABCD" },
-                () => "角标文字的写法，都是彩色小底块配黑字：甲乙丙丁＝甲最好、丁发霉、优良中差＝优劣更直白、ABCD＝字母序号。底色固定：绿=优(+2)、黄=普通(+1)、灰=差(+0)、红=发霉(-1)。");
+                () => "角标呈现方式",
+                new[] { BadgeModeJiaYi, BadgeModeGrade, BadgeModeAbcd, BadgeModeOff },
+                () => "一个设置管全部，默认开启：在荧光莓图标右上角显示品质角标，无需放大镜鉴定。甲乙丙丁＝甲最好、丁发霉；优良中差＝优劣更直白；ABCD＝字母序号；关闭＝不显示角标。都是彩色小底块配黑字，底色固定：绿=优(+2)、黄=普通(+1)、灰=差(+0)、红=发霉(-1)。");
 
             // 把定义（可能带新的默认值）写回文件
             _config.Save();

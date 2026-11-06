@@ -15,7 +15,8 @@ namespace QoL
     /// 字典只放调试面板特有的英文，其它界面对不上就原样放行，不会误伤。
     ///
     /// 不再注入任何翻页按钮——F5/F6 与「上一页/下一页」都已移除，面板保持游戏原生结构。
-    /// 另外提供一个可自定义的额外开关键（默认 F10），F9 本身照常可用。
+    /// 设置里只有一个「汉化调试面板」下拉（关闭 / 仅 F9 / 自定义 F 键），
+    /// 它既是这个功能的开关，也决定额外开关键；F9 本身照常可用。
     /// </summary>
     internal static class DebugPanelZh
     {
@@ -37,7 +38,7 @@ namespace QoL
             get
             {
                 QoLSettings settings = ModEntry.Settings;
-                return settings != null && settings.HanifyDebugPanel.Value;
+                return settings != null && settings.DebugPanelMode.Value != QoLSettings.DebugPanelOff;
             }
         }
 
@@ -258,7 +259,7 @@ namespace QoL
         }
 
         // ---------------------------------------------------------------
-        // 自定义快捷键（默认 F10），F9 是游戏自带的
+        // 自定义快捷键（由设置项「汉化调试面板」决定），F9 是游戏自带的
         // ---------------------------------------------------------------
 
         internal static void Tick()
@@ -269,8 +270,10 @@ namespace QoL
                 return;
             }
 
-            string name = settings.DebugPanelHotkey.Value;
-            if (string.IsNullOrEmpty(name) || name == "无")
+            string name = settings.DebugPanelMode.Value;
+            // 「关闭」由 Enabled 挡住；「仅 F9」和旧值「无」都表示不额外绑键。
+            if (string.IsNullOrEmpty(name) || name == QoLSettings.DebugPanelOff
+                || name == QoLSettings.DebugPanelF9Only || name == "无")
             {
                 return;
             }

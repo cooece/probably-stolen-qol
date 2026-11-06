@@ -16,6 +16,9 @@ namespace QoL
     ///     字体从同元素的「堆叠数量」节点借，所以和游戏字体一致；
     ///   · 位置用锚点钉在图标右上角，图标多大都不会飘。
     ///
+    /// 设置里只有「角标呈现方式」一个下拉：三种写法 + 「关闭」，默认甲乙丙丁。
+    /// 免鉴定固定开启，不再单独给「显示品质角标」「无需放大镜」开关。
+    ///
     /// 字有三种写法，底块颜色固定四档：
     ///   优 +2  绿   甲乙丙丁=甲   优良中差=优   ABCD=A
     ///   普 +1  黄   甲乙丙丁=乙   优良中差=良   ABCD=B
@@ -38,10 +41,11 @@ namespace QoL
         private const string GradeTag = "WINE_BERRY_QUALITY_BADGES_GRADE_V2";
         private const string LegacyGradeTag = "WINE_BERRY_QUALITY_BADGES_GRADE_V1";
 
-        // 三种文字写法，同时也是设置里下拉框的三个选项
-        private const string JiaYiChoice = "甲乙丙丁";        // 甲 乙 丙 丁
-        private const string GradeWordChoice = "优良中差";   // 优 良 中 差
-        private const string AbcdChoice = "ABCD";           // A B C D
+        // 三种写法直接引用设置项的常量：界面选项和这里永远用同一份字符串，
+        // 不会再出现「下拉框改了名、代码还在匹配旧值」的问题。
+        private const string JiaYiChoice = QoLSettings.BadgeModeJiaYi;      // 甲 乙 丙 丁
+        private const string GradeWordChoice = QoLSettings.BadgeModeGrade;   // 优 良 中 差
+        private const string AbcdChoice = QoLSettings.BadgeModeAbcd;         // A B C D
 
         // ------------------------------------------------------------------
         // 外观参数。要调就调这几个。
@@ -83,12 +87,14 @@ namespace QoL
         private static Harmony _harmony;
         private static QoLSettings _settings;
 
-        private static bool Enabled => _settings == null || _settings.BerryBadge.Value;
+        /// <summary>「角标呈现方式」选「关闭」就不显示。</summary>
+        private static bool Enabled =>
+            _settings == null || _settings.BerryDisplayMode.Value != QoLSettings.BadgeModeOff;
 
-        /// <summary>免鉴定：开启时直接读 condition，关闭时只认放大镜鉴定过的。</summary>
-        private static bool WithoutMagnifier => _settings == null || _settings.BerrySkipMagnifier.Value;
+        /// <summary>免鉴定固定开启：「无需放大镜」已整合进同一个设置，界面不再单独给开关。</summary>
+        private static bool WithoutMagnifier => true;
 
-        /// <summary>当前字样式。存的值不认识（比如旧配置里的贴图模式）时按「文字」处理。</summary>
+        /// <summary>当前字样式。存的值不认识（比如旧配置里的贴图模式）时按「甲乙丙丁」处理。</summary>
         private static string TextStyle
         {
             get
@@ -186,12 +192,10 @@ namespace QoL
 
                 if (settings != null)
                 {
-                    settings.BerryBadge.OnChanged += OnToggleChanged;
-                    settings.BerrySkipMagnifier.OnChanged += OnToggleChanged;
                     settings.BerryDisplayMode.OnChanged += OnModeChanged;
                 }
 
-                QLog.Info("荧光莓角标：已挂载（" + TextStyle + "，免鉴定=" + WithoutMagnifier + "）");
+                QLog.Info("荧光莓角标：已挂载（" + TextStyle + "）");
             }
             catch (Exception e)
             {
@@ -212,8 +216,6 @@ namespace QoL
 
             if (_settings != null)
             {
-                _settings.BerryBadge.OnChanged -= OnToggleChanged;
-                _settings.BerrySkipMagnifier.OnChanged -= OnToggleChanged;
                 _settings.BerryDisplayMode.OnChanged -= OnModeChanged;
                 _settings = null;
             }
@@ -236,11 +238,7 @@ namespace QoL
             Tracked.Clear();
         }
 
-        private static void OnToggleChanged(bool _)
-        {
-            RefreshDisplayed();
-        }
-
+        /// <summary>呈现方式（含「关闭」）一变，立刻重画所有已显示的角标。</summary>
         private static void OnModeChanged(string _)
         {
             RefreshDisplayed();
