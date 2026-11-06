@@ -20,6 +20,8 @@ namespace QoL
     ///
     /// 文字区用贴图比例锚在遮罩形状内部的安全矩形里，再套一层 RectMask2D 硬裁剪，
     /// 保证怎么算都不会跑到形状外。文字颜色固定 #172C3E，和屏幕原生文字一致。
+    /// 版式：标题与物品明细在安全区里居中；底部一行以中线为界左右分栏，
+    /// 左栏「种类 N」、右栏「数量 M」，各自左对齐并留相同内边距。
     ///
     /// 位置不写死屏幕比例：运行时找收银机 SpriteRenderer，用 bounds 经主相机投影出
     /// 整张贴图在屏幕上的矩形。换分辨率、相机缩放、换美化贴图都不会跑偏。
@@ -71,6 +73,8 @@ namespace QoL
         private static Image _patchImage;
         private static RectTransform _clip;
         private static TMP_Text _text;
+        private static TMP_Text _footerLeft;
+        private static TMP_Text _footerRight;
 
         private static SpriteRenderer _register;
         private static Sprite _patchSprite;
@@ -79,6 +83,8 @@ namespace QoL
         private static float _nextRefresh;
         private static bool _failed;
         private static string _lastText = "";
+        private static string _leftText = "";
+        private static string _rightText = "";
         private static int _rows = 3;
 
         private static bool Enabled
@@ -178,7 +184,7 @@ namespace QoL
             for (int i = 0; i < Kinds.Count; i++) total += Kinds[i].Units;
 
             Builder.Length = 0;
-            Builder.Append("<b>商品统计</b>\n");
+            Builder.Append("<b>商品统计</b>");
 
             // 屏幕小，只列数量最多的前 3 种；名字太长截一下
             int shown = Mathf.Min(Kinds.Count, MaxKinds);
@@ -190,22 +196,13 @@ namespace QoL
                     ? k.Name.Substring(0, MaxNameChars - 1) + "…"
                     : k.Name;
 
-                Builder.Append(name).Append(" ×").Append(k.Units).Append('\n');
+                Builder.Append('\n').Append(name).Append(" ×").Append(k.Units);
             }
 
-            // 合计始终算整批物品，不因为只列 3 种而少算
-            if (Kinds.Count > shown)
-            {
-                Builder.Append("还有 ").Append(Kinds.Count - shown).Append(" 种\n");
-                Builder.Append("共 ").Append(total).Append(" 个");
-                _rows = shown + 3;
-            }
-            else
-            {
-                Builder.Append("共 ").Append(Kinds.Count).Append(" 种，")
-                       .Append(total).Append(" 个");
-                _rows = shown + 2;
-            }
+            // 合计行以中线为界左右分开；数字始终是整批，不因只列 3 种而少算
+            _leftText = "种类 " + Kinds.Count;
+            _rightText = "数量 " + total;
+            _rows = shown + 2; // 标题 + 明细 + 底部合计行
             return Builder.ToString();
         }
 
@@ -221,6 +218,8 @@ namespace QoL
             {
                 _lastText = text;
                 _text.text = text;
+                _footerLeft.text = _leftText;
+                _footerRight.text = _rightText;
             }
 
             if (!_root.activeSelf) _root.SetActive(true);
@@ -257,8 +256,12 @@ namespace QoL
             _patchImage = null;
             _clip = null;
             _text = null;
+            _footerLeft = null;
+            _footerRight = null;
             _register = null;
             _lastText = "";
+            _leftText = "";
+            _rightText = "";
             _rows = 3;
             _failed = false;
         }
@@ -302,7 +305,7 @@ namespace QoL
                 _clip.offsetMax = Vector2.zero;
                 clipGo.AddComponent<RectMask2D>();
 
-                // 文字：铺满裁剪框
+                // 主文字：标题 + 物品明细，在左边界和右边界之间居中；底部一行留给合计
                 var textGo = new GameObject("Text", typeof(RectTransform));
                 textGo.transform.SetParent(_clip, false);
                 RectTransform tr = (RectTransform)textGo.transform;
@@ -312,13 +315,12 @@ namespace QoL
                 tr.offsetMax = Vector2.zero;
 
                 _text = textGo.AddComponent<TextMeshProUGUI>();
-                _text.font = CustomerBadge.ResolveFont();
-                _text.color = new Color32(0x17, 0x2C, 0x3E, 0xFF); // #172C3E
-                _text.alignment = TextAlignmentOptions.TopLeft;
-                _text.enableWordWrapping = false;
-                _text.overflowMode = TextOverflowModes.Overflow; // 越界交给 RectMask2D 裁掉
-                _text.margin = Vector4.zero;
-                _text.raycastTarget = false;
+                SetupText(_text);
+                _text.alignment = TextAlignmentOptions.Center;
+
+                // 合计行：以中线为界左右两栏，各自左对齐、留同样的内边距
+                _footerLeft = MakeFooter("Kind", 0f, 0.5f);
+                _footerRight = MakeFooter("Total", 0.5f, 1f);
 
                 _root.SetActive(false);
                 return true;
@@ -330,6 +332,32 @@ namespace QoL
                 Remove();
                 return false;
             }
+        }
+
+        private static void SetupText(TMP_Text t)
+        {
+            t.font = CustomerBadge.ResolveFont();
+            t.color = new Color32(0x17, 0x2C, 0x3E, 0xFF); // #172C3E
+            t.enableWordWrapping = false;
+            t.overflowMode = TextOverflowModes.Overflow; // 越界交给 RectMask2D 裁掉
+            t.raycastTarget = false;
+        }
+
+        /// <summary>合计行的一栏，贴着裁剪框底部，高度按行高在 Reposition 里给。</summary>
+        private static TMP_Text MakeFooter(string name, float x0, float x1)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(_clip, false);
+            RectTransform rt = (RectTransform)go.transform;
+            rt.anchorMin = new Vector2(x0, 0f);
+            rt.anchorMax = new Vector2(x1, 0f);
+            rt.offsetMin = Vector2.zero;
+            rt.offsetMax = new Vector2(0f, 20f);
+
+            TMP_Text t = go.AddComponent<TextMeshProUGUI>();
+            SetupText(t);
+            t.alignment = TextAlignmentOptions.Left; // 垂直居中 + 水平左
+            return t;
         }
 
         /// <summary>从 MOD 目录读玩家画的干净屏幕补丁，只读一次。</summary>
@@ -398,7 +426,20 @@ namespace QoL
                 // 1.35 留足行距，避免不同中文字体的行高把最后一行挤出裁剪框
                 float byHeight = hLogical / (Mathf.Max(3, _rows) * 1.35f);
                 float byWidth = wLogical / 7.8f;
-                _text.fontSize = Mathf.Clamp(Mathf.Min(byHeight, byWidth), 8f, 40f);
+                float font = Mathf.Clamp(Mathf.Min(byHeight, byWidth), 8f, 40f);
+                float lineH = font * 1.35f;
+
+                _text.fontSize = font;
+                _footerLeft.fontSize = font;
+                _footerRight.fontSize = font;
+
+                // 主文字框的底边直接抬高一行，彻底避开合计行；两栏各自贴底
+                _text.rectTransform.offsetMin = new Vector2(0f, lineH);
+                _footerLeft.rectTransform.offsetMax = new Vector2(0f, lineH);
+                _footerRight.rectTransform.offsetMax = new Vector2(0f, lineH);
+                float pad = font * 0.35f;
+                _footerLeft.margin = new Vector4(pad, 0f, 0f, 0f);
+                _footerRight.margin = new Vector4(pad, 0f, 0f, 0f);
             }
             catch (Exception e)
             {
