@@ -229,11 +229,11 @@ namespace QoL
         private static readonly System.Reflection.FieldInfo StackCountField =
             AccessTools.Field(typeof(GameItemElement), "stackCountText");
 
-        /// <summary>字号。8 号在 32px 的图标上只占四分之一高，不挡果实。</summary>
-        private const float TextSize = 8f;
+        /// <summary>字号。7 号在 32px 的图标上只占五分之一高，不挡果实。</summary>
+        private const float TextSize = 7f;
 
-        /// <summary>底色块尺寸（像素）。比一个汉字略大，留 1px 边。</summary>
-        private static readonly Vector2 ChipSize = new Vector2(10f, 10f);
+        /// <summary>底色块尺寸（像素）。比一个字略大，留 1px 边。</summary>
+        private static readonly Vector2 ChipSize = new Vector2(9f, 9f);
 
         /// <summary>底色块距图标右上角的内缩。</summary>
         private static readonly Vector2 ChipInset = new Vector2(1f, 1f);
@@ -463,15 +463,18 @@ namespace QoL
             }
         }
 
-        /// <summary>底色：绿(甲/优) 黄(乙/普通) 灰(丙/差) 红(丁/发霉)。</summary>
+        /// <summary>底色不透明度：50%，透出一点果实，不把图标糊死。</summary>
+        private const byte ChipAlpha = 128;
+
+        /// <summary>底色：绿(甲/优) 黄(乙/普通) 灰(丙/差) 红(丁/发霉)，统一 50% 透明。</summary>
         private static Color GradeColor(int grade)
         {
             switch (grade)
             {
-                case 1: return new Color32(176, 180, 190, 255);   // 丙 灰
-                case 2: return new Color32(240, 196, 71, 255);    // 乙 黄
-                case 3: return new Color32(79, 209, 122, 255);    // 甲 绿
-                default: return new Color32(230, 75, 75, 255);    // 丁 红
+                case 1: return new Color32(176, 180, 190, ChipAlpha);   // 丙 灰
+                case 2: return new Color32(240, 196, 71, ChipAlpha);    // 乙 黄
+                case 3: return new Color32(79, 209, 122, ChipAlpha);    // 甲 绿
+                default: return new Color32(230, 75, 75, ChipAlpha);    // 丁 红
             }
         }
 
