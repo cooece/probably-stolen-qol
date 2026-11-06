@@ -17,10 +17,10 @@ namespace QoL
     ///   · 位置用锚点钉在图标右上角，图标多大都不会飘。
     ///
     /// 字有三种写法，底块颜色固定四档：
-    ///   优 +2  绿   文字=甲   优良中差=优   ABCD=A
-    ///   普 +1  黄   文字=乙   优良中差=良   ABCD=B
-    ///   差 +0  灰   文字=丙   优良中差=中   ABCD=C
-    ///   霉 -1  红   文字=丁   优良中差=差   ABCD=D
+    ///   优 +2  绿   甲乙丙丁=甲   优良中差=优   ABCD=A
+    ///   普 +1  黄   甲乙丙丁=乙   优良中差=良   ABCD=B
+    ///   差 +0  灰   甲乙丙丁=丙   优良中差=中   ABCD=C
+    ///   霉 -1  红   甲乙丙丁=丁   优良中差=差   ABCD=D
     ///
     /// 性能上有三条纪律，都是踩过坑换来的：
     ///   1. 不重复登记元素（否则列表无限膨胀，加载直接卡死）；
@@ -39,7 +39,7 @@ namespace QoL
         private const string LegacyGradeTag = "WINE_BERRY_QUALITY_BADGES_GRADE_V1";
 
         // 三种文字写法，同时也是设置里下拉框的三个选项
-        private const string JiaYiChoice = "文字";          // 甲 乙 丙 丁
+        private const string JiaYiChoice = "甲乙丙丁";        // 甲 乙 丙 丁
         private const string GradeWordChoice = "优良中差";   // 优 良 中 差
         private const string AbcdChoice = "ABCD";           // A B C D
 
