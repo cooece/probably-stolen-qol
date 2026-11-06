@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using TMPro;
 using UnityEngine;
 
 namespace QoL
@@ -65,6 +66,8 @@ namespace QoL
 
         private static GameItem _buttonMachine;
         private static float _nextTick;
+        private static float _nextCellCheck;
+        private static bool _hintShown;
 
         private static string Mode
         {
@@ -183,6 +186,9 @@ namespace QoL
             _applied = false;
             _buttonMachine = null;
             _nextTick = 0f;
+            _nextCellCheck = 0f;
+            _hintShown = false;
+            Hint.Destroy();
             Queue.Clear();
             Draws.Clear();
             Cooldown.Clear();
@@ -411,8 +417,109 @@ namespace QoL
         // 每帧驱动：统一处理队列
         // ---------------------------------------------------------------
 
+        /// <summary>备用电池全没电时，在屏幕中间显示一条系统风格的状态提示。</summary>
+        private static void UpdateCellHint()
+        {
+            if (Time.unscaledTime < _nextCellCheck) return;
+            _nextCellCheck = Time.unscaledTime + 1f; // 1 秒查一次，不每帧扫库存
+
+            bool show = false;
+            if (Enabled)
+            {
+                List<GameItem> cells = CollectCells(AllItems());
+                bool anyUsable = false;
+                for (int i = 0; i < cells.Count; i++)
+                {
+                    GameItem c = cells[i];
+                    if (Energy(c) > 0 && PowerHelper.CanDrawPowerSource(c, 1))
+                    {
+                        anyUsable = true;
+                        break;
+                    }
+                }
+                // 有散放的普通电池、但一块能供电的都没有 → 提示
+                // 一块电池都没有（新档 / 全装在机器里）时不打扰
+                show = cells.Count > 0 && !anyUsable;
+            }
+
+            if (show == _hintShown) return;
+            _hintShown = show;
+            Hint.Set(show);
+            if (show) QLog.Info("自动换电池：可用电池已用完");
+        }
+
+        /// <summary>屏幕中间的一行纯文字：游戏中文字体 + 游戏调色板黄字，无底板无边框。</summary>
+        private static class Hint
+        {
+            private const int Order = 500; // 高于可拖动窗口 3，低于主 UI 900
+            private static GameObject _root;
+
+            internal static void Set(bool show)
+            {
+                if (!show)
+                {
+                    if (_root != null && _root.activeSelf) _root.SetActive(false);
+                    return;
+                }
+                if (!Ensure()) return;
+                if (!_root.activeSelf) _root.SetActive(true);
+            }
+
+            private static bool Ensure()
+            {
+                if (_root != null) return true;
+                try
+                {
+                    _root = new GameObject("QoL_BatteryHint", typeof(RectTransform));
+                    UnityEngine.Object.DontDestroyOnLoad(_root);
+
+                    Canvas canvas = _root.AddComponent<Canvas>();
+                    canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+                    canvas.sortingOrder = Order;
+                    CustomUIManager.AddScreenScaler(_root); // 1920×1080 参考，换分辨率不错位
+
+                    var go = new GameObject("Text", typeof(RectTransform));
+                    go.transform.SetParent(_root.transform, false);
+                    RectTransform rt = (RectTransform)go.transform;
+                    rt.anchorMin = new Vector2(0.5f, 0.72f);
+                    rt.anchorMax = new Vector2(0.5f, 0.72f);
+                    rt.pivot = new Vector2(0.5f, 0.5f);
+                    rt.sizeDelta = new Vector2(640f, 64f);
+
+                    TMP_Text text = go.AddComponent<TextMeshProUGUI>();
+                    text.font = CustomerBadge.ResolveFont();
+                    text.text = "可用电池已用完";
+                    text.color = RenderHandler.GetColorFromPalette(RenderHandler.ColorPalette.LightYellow);
+                    text.fontSize = 30f;
+                    text.alignment = TextAlignmentOptions.Center;
+                    text.enableWordWrapping = false;
+                    text.overflowMode = TextOverflowModes.Overflow;
+                    text.raycastTarget = false;
+
+                    _root.SetActive(false);
+                    return true;
+                }
+                catch (Exception e)
+                {
+                    QLog.Warn("自动换电池：状态提示创建失败 —— " + e.Message);
+                    if (_root != null) UnityEngine.Object.Destroy(_root);
+                    _root = null;
+                    return false;
+                }
+            }
+
+            internal static void Destroy()
+            {
+                if (_root == null) return;
+                try { UnityEngine.Object.Destroy(_root); } catch { }
+                _root = null;
+            }
+        }
+
         internal static void Tick(float dt)
         {
+            UpdateCellHint();
+
             // 待归还的电池不受功能开关影响：就算把设置关了也要还，别留在机器里
             if (Pending.Count > 0)
             {
