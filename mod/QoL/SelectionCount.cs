@@ -21,6 +21,7 @@ namespace QoL
     /// 版式是上中下三块各自独立锚定、位置恒定，框选 1 种还是 3 种都不会移动：
     ///   顶部一行：标题「商品统计」，水平居中，贴安全区顶；
     ///   中间三行：物品明细，靠左侧黄线左对齐，贴着标题下方往下排；
+    ///             名字按实际剩余宽度尽量多显示，放不下才省略，整行不越过右侧黄线；
     ///   底部一行：以中线为界左「种类 N」右「数量 M」，各自左对齐、贴安全区底。
     /// 字号按满 5 行固定算，不随物品数量变化。文字区套一层 RectMask2D 硬裁剪，
     /// 保证永远出不了遮罩形状；颜色固定 #172C3E，和屏幕原生文字一致。
@@ -36,7 +37,6 @@ namespace QoL
         private const float RefreshInterval = 0.1f;
         private const int SortingOrder = 960;
         private const int MaxKinds = 3;
-        private const int MaxNameChars = 5;
         private const int RowSlots = 5; // 标题 1 + 明细 3 + 合计 1
 
         // 遮罩形状在 960×540 图里的范围（图像坐标，原点左上）
@@ -86,7 +86,6 @@ namespace QoL
 
         private static float _nextRefresh;
         private static bool _failed;
-        private static string _lastText = "";
         private static string _leftText = "";
         private static string _rightText = "";
 
@@ -129,21 +128,20 @@ namespace QoL
                 return;
             }
 
-            string text = Build(items);
-            if (text == null)
+            if (!Build(items))
             {
                 Hide();
                 return;
             }
 
-            Show(text);
+            Show();
         }
 
         // ---------------------------------------------------------------
         // 统计
         // ---------------------------------------------------------------
 
-        private static string Build(List<GameItemElement> items)
+        private static bool Build(List<GameItemElement> items)
         {
             Kinds.Clear();
             Index.Clear();
@@ -177,7 +175,7 @@ namespace QoL
                 }
             }
 
-            if (Kinds.Count == 0) return null;
+            if (Kinds.Count == 0) return false;
 
             Kinds.Sort((a, b) => a.Units == b.Units
                 ? string.CompareOrdinal(a.Name, b.Name)
@@ -186,50 +184,25 @@ namespace QoL
             int total = 0;
             for (int i = 0; i < Kinds.Count; i++) total += Kinds[i].Units;
 
-            // 只产中间明细，标题固定、合计单独两栏
-            Builder.Length = 0;
-            int shown = Mathf.Min(Kinds.Count, MaxKinds);
-            for (int i = 0; i < shown; i++)
-            {
-                Kind k = Kinds[i];
-                // 截断后连同省略号也不超过 MaxNameChars 个字符
-                string name = k.Name.Length > MaxNameChars
-                    ? k.Name.Substring(0, MaxNameChars - 1) + "…"
-                    : k.Name;
-
-                if (i > 0) Builder.Append('\n');
-                Builder.Append(name).Append(" ×").Append(k.Units);
-            }
-
-            // 合计数字始终是整批，不因为只列 3 种而少算
+            // 明细文本在 Reposition 里按可用宽度生成；这里只留合计数字（算整批）
             _leftText = "种类 " + Kinds.Count;
             _rightText = "数量 " + total;
-            return Builder.ToString();
+            return true;
         }
 
         // ---------------------------------------------------------------
         // 叠加层
         // ---------------------------------------------------------------
 
-        private static void Show(string text)
+        private static void Show()
         {
             if (!Ensure()) return;
-
-            if (text != _lastText)
-            {
-                _lastText = text;
-                _items.text = text;
-                _footerLeft.text = _leftText;
-                _footerRight.text = _rightText;
-            }
-
             if (!_root.activeSelf) _root.SetActive(true);
             Reposition();
         }
 
         private static void Hide()
         {
-            _lastText = "";
             try
             {
                 if (_root != null && _root.activeSelf) _root.SetActive(false);
@@ -261,7 +234,6 @@ namespace QoL
             _footerLeft = null;
             _footerRight = null;
             _register = null;
-            _lastText = "";
             _leftText = "";
             _rightText = "";
             _failed = false;
@@ -435,11 +407,58 @@ namespace QoL
                 _items.margin = new Vector4(pad, 0f, 0f, 0f);
                 _footerLeft.margin = new Vector4(pad, 0f, 0f, 0f);
                 _footerRight.margin = new Vector4(pad, 0f, 0f, 0f);
+
+                // 明细按实际可容纳宽度生成：能全显示就全显示，放不下才省略，
+                // 名字再长也不会越过右边黄线（黄线就是安全区右边界）。
+                float avail = w - pad - font * 0.2f; // 右侧再留一点余量
+                Builder.Length = 0;
+                int shown = Mathf.Min(Kinds.Count, MaxKinds);
+                for (int i = 0; i < shown; i++)
+                {
+                    if (i > 0) Builder.Append('\n');
+                    AppendFit(Builder, Kinds[i], avail);
+                }
+                _items.text = Builder.ToString();
+                _footerLeft.text = _leftText;
+                _footerRight.text = _rightText;
             }
             catch (Exception e)
             {
                 QLog.Warn("框选统计：定位失败 —— " + e.Message);
             }
+        }
+
+        /// <summary>塞进尽可能多的字，实在放不下才加省略号，保证整行不越线。</summary>
+        private static void AppendFit(StringBuilder sb, Kind k, float avail)
+        {
+            string suffix = " ×" + k.Units;
+            string name = k.Name;
+
+            if (Fits(name + suffix, avail))
+            {
+                sb.Append(name).Append(suffix);
+                return;
+            }
+
+            for (int n = name.Length - 1; n > 0; n--)
+            {
+                string cut = name.Substring(0, n) + "…";
+                if (Fits(cut + suffix, avail))
+                {
+                    sb.Append(cut).Append(suffix);
+                    return;
+                }
+            }
+
+            sb.Append('…').Append(suffix);
+        }
+
+        private static bool Fits(string line, float avail)
+        {
+            float width = _items.GetPreferredValues(line).x;
+            // 字体偶尔未就绪会返回 0，退回按每字一个字宽粗估，宁可多截也不越线
+            if (width <= 0.001f) return line.Length * _items.fontSize <= avail;
+            return width <= avail;
         }
 
         /// <summary>找不到收银机对象时，按屏幕区域比例反推整张贴图矩形。</summary>
