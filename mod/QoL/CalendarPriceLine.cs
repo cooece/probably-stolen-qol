@@ -31,8 +31,8 @@ namespace QoL
         /// <summary>涨价（红）。取自游戏 UI 里的警示红。</summary>
         private const string UpColor = "#FA5151";
 
-        /// <summary>降价（绿）。取自游戏 UI 里的荧光绿。</summary>
-        private const string DownColor = "#91D300";
+        /// <summary>降价（深绿）。原来的荧光绿 #91D300 在米黄屏上发飘看不清，换成深绿。</summary>
+        private const string DownColor = "#29530A";
 
         /// <summary>一项与一项之间的分隔。用中文逗号比空格省地方，也比空格更像行情。</summary>
         private const string Separator = "，";
@@ -380,11 +380,12 @@ namespace QoL
 
                 bool up = value > 0;
                 int percent = Mathf.Abs(value);
-                string number = (up ? "+" : "-") + percent + "%";
+                string number = (up ? "涨" : "降") + percent + "%";
 
-                // 颜色表示涨跌，符号再确认一次
-                string segment = "<color=" + (up ? UpColor : DownColor) + ">" + name + number + "</color>";
-                float width = MeasureWidth(name) + MeasureWidth(number);
+                // 每项前面都带「今日」，涨跌用汉字而不是正负号，读起来更像一句话
+                const string Today = "今日";
+                string segment = "<color=" + (up ? UpColor : DownColor) + ">" + Today + name + number + "</color>";
+                float width = MeasureWidth(Today) + MeasureWidth(name) + MeasureWidth(number);
 
                 if (up)
                 {

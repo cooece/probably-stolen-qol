@@ -18,13 +18,20 @@ if not errorlevel 1 goto :running
 
 copy /Y "%SRC%\QoL.dll" "%TARGET%\" >nul
 copy /Y "%SRC%\manifest.xml" "%TARGET%\" >nul
-if exist "%~dp0workshop\mask-blue.png" (
-    copy /Y "%~dp0workshop\mask-blue.png" "%TARGET%\negociation_tablet_ScreenOverlay.png" >nul
-    echo 遮罩：蓝色（本机 HUD 配色）
-) else (
-    copy /Y "%SRC%\negociation_tablet_ScreenOverlay.png" "%TARGET%\" >nul
-    echo 遮罩：原版米黄（没找到 mask-blue.png）
-)
+
+if exist "%~dp0workshop\mask-blue.png" goto :bluemask
+copy /Y "%SRC%\negociation_tablet_ScreenOverlay.png" "%TARGET%\" >nul
+echo 遮罩：原版米黄（没找到 mask-blue.png）
+goto :clean
+:bluemask
+copy /Y "%~dp0workshop\mask-blue.png" "%TARGET%\negociation_tablet_ScreenOverlay.png" >nul
+echo 遮罩：蓝色（本机 HUD 配色）
+
+:clean
+rem 加载器会拒绝文件夹里任何没写进 <Assemblies> 的 DLL（例如 *_local.dll、*.prev），
+rem 所以这里把除 QoL.dll 之外的动态库统一改成 .bak，既不影响加载也留个底。
+for %%F in ("%TARGET%\*.dll") do if /i not "%%~nxF"=="QoL.dll" ren "%%~fF" "%%~nF.bak" >nul 2>nul
+for %%F in ("%TARGET%\*.prev") do ren "%%~fF" "%%~nF.bak" >nul 2>nul
 
 echo 已部署到本地副本：%TARGET%
 goto :end
