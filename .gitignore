@@ -24,3 +24,9 @@ _*.py
 # 创意工坊上传包（可随时重新生成）
 dist/
 
+
+# 工坊素材：字体与 AI 生成的原图体积大，不进版本库（preview 成品保留）
+workshop/fonts/
+workshop/Retro_futuristic_*.png
+workshop/Colorful_cartoon_*.png
+workshop/2D_game_cover_*.png

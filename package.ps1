@@ -28,6 +28,7 @@ $out = Join-Path $root 'dist\workshop'
 $vdfDir = Join-Path $root 'workshop'
 $vdf = Join-Path $vdfDir 'mod.vdf'
 $preview = Join-Path $vdfDir 'preview.png'
+$previewJpg = Join-Path $vdfDir 'preview.jpg'
 
 if (-not $SkipBuild) {
     Write-Host '编译中…' -ForegroundColor Cyan
@@ -61,8 +62,12 @@ if (Test-Path $assets) {
 }
 Get-ChildItem $src -Filter *.png -File | ForEach-Object { Copy-Item $_.FullName (Join-Path $out $_.Name) -Force }
 
-# 工坊缩略图：Steam 用 previewfile 指定的这张，文件夹里的 preview.png 只在离线时兜底
-if (Test-Path $preview) {
+# 工坊缩略图：优先用 preview.jpg（体积小，网页和 steamcmd 都更容易过），
+# 没有 JPG 才退回 PNG。图片同时会打进内容文件夹，玩家下载后游戏内列表也能显示。
+if (Test-Path $previewJpg) {
+    Copy-Item $previewJpg (Join-Path $out 'preview.jpg')
+}
+elseif (Test-Path $preview) {
     $size = (Get-Item $preview).Length
     if ($size -gt 1MB) {
         Write-Host ('警告：preview.png 有 {0:N0} KB，建议压到 1 MB 以内。' -f ($size / 1KB)) -ForegroundColor Yellow
@@ -70,7 +75,7 @@ if (Test-Path $preview) {
     Copy-Item $preview (Join-Path $out 'preview.png')
 }
 else {
-    Write-Host '提示：还没有 workshop\preview.png，工坊物品会没有横幅图（可以先传，之后在网页上补图）。' -ForegroundColor Yellow
+    Write-Host '提示：还没有 workshop\preview.png 或 preview.jpg，工坊物品会没有横幅图。' -ForegroundColor Yellow
 }
 
 if (-not (Test-Path $vdfDir)) { New-Item -ItemType Directory -Path $vdfDir -Force | Out-Null }
