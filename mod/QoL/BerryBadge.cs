@@ -226,6 +226,13 @@ namespace QoL
 
             Track(__instance);
             UpdateText(__instance);
+
+            // 轻量统计：每 5000 次刷新打一行，用来判断是不是调用量异常
+            _calls++;
+            if (_calls % 5000 == 0)
+            {
+                QLog.Info("荧光莓角标：刷新 " + _calls + " 次，已登记 " + Tracked.Count + " 个元素");
+            }
         }
 
         private static void AfterInspect(GameItem gameItem)
@@ -358,14 +365,45 @@ namespace QoL
             AccessTools.Field(typeof(GameItemElement), "stackCountText");
 
         private static int _logged;
+        private static int _calls;
 
+        /// <summary>已经登记过的元素，避免同一格子被反复加进 Tracked。</summary>
+        private static readonly ConditionalWeakTable<GameItemElement, object> Seen =
+            new ConditionalWeakTable<GameItemElement, object>();
+
+        private static readonly object SeenMarker = new object();
+
+        /// <summary>
+        /// 把元素登记下来，改设置时好让它重画。
+        ///
+        /// 注意：这里必须去重。HandleInnateModSprite 每次刷新都会调用，
+        /// 一个格子一局会刷新上千次，不去重列表就会无限膨胀，
+        /// 再加上每次登记都要扫一遍全表，很快就会把加载卡死。
+        /// </summary>
         private static void Track(GameItemElement element)
         {
-            for (int i = Tracked.Count - 1; i >= 0; i--)
+            if (Seen.TryGetValue(element, out _))
             {
-                if (!Tracked[i].TryGetTarget(out _))
+                return;
+            }
+
+            Seen.Add(element, SeenMarker);
+
+            // 只在列表变大到一定程度时清理一次死引用，平时都是 O(1)
+            if (Tracked.Count >= 256)
+            {
+                for (int i = Tracked.Count - 1; i >= 0; i--)
                 {
-                    Tracked.RemoveAt(i);
+                    if (!Tracked[i].TryGetTarget(out _))
+                    {
+                        Tracked.RemoveAt(i);
+                    }
+                }
+
+                if (Tracked.Count >= 512)
+                {
+                    // 还这么多说明元素确实多，丢掉一半最老的，防止无限增长
+                    Tracked.RemoveRange(0, Tracked.Count / 2);
                 }
             }
 
