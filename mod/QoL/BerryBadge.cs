@@ -41,7 +41,9 @@ namespace QoL
         /// <summary>「显示方式」里代表数字档的选项文字，和 QoLSettings 里的choices 必须一致。</summary>
         private const string ScoreChoice = "酿造评分";
         private const string KanjiChoice = "甲乙丙丁";
-        private const string TextChoice = "文字";
+        private const string TextChoice = "文字";          // 甲 / 乙 / 丙 / 丁
+        private const string GradeWordChoice = "优良中差";  // 优 / 良 / 中 / 差
+        private const string AbcdChoice = "ABCD";          // A / B / C / D
 
         /// <summary>设置来源。为空时按「全开、符号模式」的默认行为跑。</summary>
         private static QoLSettings _settings;
@@ -59,9 +61,24 @@ namespace QoL
         private static bool ShowKanji =>
             _settings != null && _settings.BerryDisplayMode.Value == KanjiChoice;
 
+        /// <summary>当前选中的文字样式；空字符串表示不是文字模式。</summary>
+        private static string TextStyle
+        {
+            get
+            {
+                string v = _settings != null ? _settings.BerryDisplayMode.Value : null;
+
+                if (v == TextChoice || v == GradeWordChoice || v == AbcdChoice)
+                {
+                    return v;
+                }
+
+                return string.Empty;
+            }
+        }
+
         /// <summary>true = 真文字模式（游戏自己的 TMP 文本节点，不是贴图）。</summary>
-        private static bool ShowText =>
-            _settings != null && _settings.BerryDisplayMode.Value == TextChoice;
+        private static bool ShowText => TextStyle.Length > 0;
 
         /// <summary>0=符号 1=数字 2=汉字，对应贴图缓存的第一个下标。</summary>
         private static int Mode => ShowScore ? 1 : (ShowKanji ? 2 : 0);
@@ -452,8 +469,39 @@ namespace QoL
             return result;
         }
 
+        /// <summary>
+        /// 按当前样式取字。三种样式共用同一套底色，只是字不同：
+        ///   文字      甲 乙 丙 丁
+        ///   优良中差  优 良 中 差
+        ///   ABCD      A B C D
+        /// 等级 3=最好、4=最差，所以 ABCD 这档是 A 最好、D 最差。
+        /// </summary>
         private static string GradeText(int grade)
         {
+            string style = TextStyle;
+
+            if (style == GradeWordChoice)
+            {
+                switch (grade)
+                {
+                    case 3: return "优";
+                    case 2: return "良";
+                    case 1: return "中";
+                    default: return "差";
+                }
+            }
+
+            if (style == AbcdChoice)
+            {
+                switch (grade)
+                {
+                    case 3: return "A";
+                    case 2: return "B";
+                    case 1: return "C";
+                    default: return "D";
+                }
+            }
+
             switch (grade)
             {
                 case 3: return "甲";
