@@ -449,21 +449,24 @@ namespace QoL
 
             if (show == _hintShown) return;
             _hintShown = show;
-            if (show) NotifyEmpty();
+            if (show && !NotifyEmpty()) _hintShown = false; // 气泡还没就绪，下次再试
         }
 
-        private static void NotifyEmpty()
+        /// <summary>弹一条游戏原生气泡；返回是否真的弹出去了。</summary>
+        private static bool NotifyEmpty()
         {
             try
             {
                 ReputationUIManager ui = ReputationUIManager.Instance;
-                if (ui == null) return;
+                if (ui == null) return false;
                 ui.Notify("可用电池已用完");
                 QLog.Info("自动换电池：可用电池已用完");
+                return true;
             }
             catch (Exception e)
             {
                 QLog.Warn("自动换电池：状态提示失败 —— " + e.Message);
+                return false;
             }
         }
 
