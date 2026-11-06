@@ -45,11 +45,44 @@ namespace QoL
         /// <summary>动态文案里的固定片段（含数字的句子用正则，纯前缀用片段替换）。</summary>
         private static readonly (string From, string To)[] Fragments =
         {
+            // 按钮旁 ⓘ 徽标的悬停说明。整条作为片段替换，
+            // 这样后面即使拼了「由模组…」也能一起翻成中文。
+            ("Buys the store with cash at today's price (credits are topped up first if short), puts the deed on the counter and queues what follows the deed (Joe Wild's visit, in the editor), without the ending screen. Ends a running mortgage. Skips the buyout achievements.",
+             "按今日价格用现金买下店铺（钱不够会自动补足），把地契放上柜台并排好后续剧情，不弹结束画面，可以继续经营。会结束进行中的按揭，不解锁买断成就。"),
+            ("Buys the store with cash at today's price (credits are topped up first if short) and ends the run with the buyout ending, to test the game over screen and the run summary. Skips the buyout achievements.",
+             "按今日价格用现金买下店铺（钱不够会自动补足），以买断结局结束本局，用来测试结束画面和结算页。不解锁买断成就。"),
+            ("Ends the run with the arrest ending, to test the game over screen and the run summary.",
+             "以被捕结局结束本局，用来测试结束画面和结算页。"),
+            ("Shows the game's Debug.Log output (console, Player.log and GameLog files). Off every session by default; warnings and errors always show, and so do mods' own log lines.",
+             "显示游戏调试日志（控制台、Player.log 和 GameLog 文件）。每次启动默认关闭；警告、错误和模组自己的日志始终显示。"),
+            ("For clean screenshots and footage: hides the tooltips and hover outlines that would otherwise pop up over the shot.",
+             "截图录屏用：隐藏提示框和悬停描边，画面更干净。"),
+            ("For showing off the cast: the customer at the counter keeps changing into other characters from the game, so one clip shows many faces.",
+             "展示角色用：柜台顾客不断换成游戏里其他人物，一段录像能看到很多张脸。"),
+            ("For still shots: makes the customers stand still instead of swaying, so a screenshot catches them in a steady pose.",
+             "静态截图用：让顾客站定不摇晃，截图姿势更稳。"),
+
             ("Today's stack: ", "今日顾客队列："),
             ("No identifier matches '", "没有匹配的标识符：'"),
             (" sprites, hover for key, click to copy", " 个贴图，悬停看键名，点击复制"),
             (" customers, hover for details, click portrait to copy id", " 位顾客，悬停看详情，点头像复制 ID"),
             ("(factory failed)", "（生成失败）"),
+            (". Right-click: toggle favorite. Filter updates as you type (", "。右键收藏；输入 "),
+            ("+ characters).", " 个字以上自动筛选。"),
+            ("\nClick: spawn 1, Shift+click: spawn ", "\n左键生成 1 个；Shift+左键生成 "),
+            ("\nRight-click: toggle favorite\n", "\n右键：收藏/取消收藏\n"),
+            ("\nfaction: ", "\n阵营："),
+            ("\nname: ", "\n名称："),
+            ("(location at its event limit)", "（该地点事件次数已满）"),
+            ("(no other event defined here)", "（这里没有别的事件）"),
+            (", <color=#FF8C73>closed by event</color>", "，<color=#FF8C73>被事件关闭</color>"),
+            (", closes the location", "，关闭该地点"),
+            (", has a start condition", "，有起始条件"),
+            (", daily chance ", "，每日概率 "),
+            (", unavailable", "，不可用"),
+            (", undiscovered", "，未发现"),
+            (" days left", " 天后结束"),
+            ("today only", "仅今天"),
         };
 
         private static readonly (Regex Pattern, string Replacement)[] Patterns =
@@ -58,6 +91,11 @@ namespace QoL
                 "匹配 $1 / 共 $2 位顾客，悬停看详情，点头像复制 ID"),
             (new Regex(@"^(\d+) of (\d+) sprites, hover for key, click to copy$"),
                 "匹配 $1 / 共 $2 个贴图，悬停看键名，点击复制"),
+            (new Regex(@"Added by mod '([^']+)'"), "由模组「$1」提供"),
+            (new Regex(@"Today's stack \(\d+\): "), "今日顾客队列："),
+            (new Regex(@"Spawn (\d+) units per click\. Holding Shift while clicking does the same\."),
+                "每次点击生成 $1 个，按住 Shift 点击效果相同。"),
+            (new Regex(@"Start \((\d+)d\)"), "开始（$1 天）"),
         };
 
         private static readonly Dictionary<string, string> Map =
@@ -211,6 +249,20 @@ namespace QoL
                 { "SpriteDict is not loaded in this scene.", "当前场景没有加载贴图库。" },
                 { "Nothing spawned yet. Spawned items show up here, newest first.", "还没有生成过物品，生成过的会按最新排在这里。" },
                 { "Stack x10", "一次 10 个" },
+
+                // ---------- 子面板里剩下的可见英文 ----------
+                { "(no functions yet)", "（暂无功能）" },
+                { "Open SpriteDict Viewer", "打开贴图库查看器" },
+                { "Scale: 1x", "缩放：1 倍" },
+                { "Scale: 2x", "缩放：2 倍" },
+                { "Type here...", "在此输入…" },
+                { "No favorites yet. Right-click an item to add it.", "还没有收藏。右键物品即可收藏。" },
+                { "This group is empty.", "这个分组是空的。" },
+                { "No afterhour location is registered in this scene.", "当前场景没有注册夜间事件地点。" },
+                { "Afterhour events need a running game (PlayerStore).", "需要先进入游戏才能查看夜间事件。" },
+                { "Today's stack: empty", "今日顾客队列：空" },
+                { "Today's stack: no StoreClientManager in this scene", "今日顾客队列：当前场景没有顾客管理器" },
+                { "Vanilla paper sprites (click copies the key)", "原版纸张贴图（点击复制键名）" },
             };
 
         internal static void Apply()
@@ -227,6 +279,8 @@ namespace QoL
                 Patch(typeof(CustomUIBuilder), "AddToggle", nameof(LabelPrefix));
                 Patch(typeof(CustomUIBuilder), "AddDropdown", nameof(OptionsPrefix));
                 Patch(typeof(CustomUIManager), "CreateWindow", nameof(TitlePrefix));
+                // 按钮旁 ⓘ 徽标的悬停说明走 WithTooltip，不经过 AddButton 的 text
+                Patch(typeof(CustomUIBuilder), "WithTooltip", nameof(TooltipPrefix));
 
                 Debug.Log(ModEntry.Tag + "调试面板汉化已挂载");
             }
@@ -349,6 +403,11 @@ namespace QoL
             title = Zh(title);
         }
 
+        private static void TooltipPrefix(ref string tooltipText)
+        {
+            tooltipText = Zh(tooltipText);
+        }
+
         /// <summary>下拉选项（例如物品生成器的 "All"）。</summary>
         private static void OptionsPrefix(IList<string> options)
         {
@@ -398,13 +457,10 @@ namespace QoL
                 }
             }
 
-            // 带数字的动态说明
+            // 带数字的动态说明：逐条替换，不提前返回（一条说明里可能同时含多种片段）
             for (int i = 0; i < Patterns.Length; i++)
             {
-                if (Patterns[i].Pattern.IsMatch(text))
-                {
-                    return Patterns[i].Pattern.Replace(text, Patterns[i].Replacement);
-                }
+                text = Patterns[i].Pattern.Replace(text, Patterns[i].Replacement);
             }
 
             for (int i = 0; i < Fragments.Length; i++)
