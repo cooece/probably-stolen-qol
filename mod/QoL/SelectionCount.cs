@@ -22,6 +22,7 @@ namespace QoL
     ///   顶部一行：标题「商品统计」，水平居中，贴安全区顶；
     ///   中间三行：物品明细，靠左侧黄线左对齐，贴着标题下方往下排；
     ///             名字按实际剩余宽度尽量多显示，放不下才省略，整行不越过右侧黄线；
+    ///             明细字号比标题/合计小一档（ItemFontScale），同样宽度能多塞几个字；
     ///   底部一行：以中线为界左「种类 N」右「数量 M」，各自左对齐、贴安全区底。
     /// 字号按满 5 行固定算，不随物品数量变化。文字区套一层 RectMask2D 硬裁剪，
     /// 保证永远出不了遮罩形状；颜色固定 #172C3E，和屏幕原生文字一致。
@@ -39,6 +40,9 @@ namespace QoL
         private const int MaxKinds = 3;
         private const int RowSlots = 5; // 标题 1 + 明细 3 + 合计 1
 
+        // 商品明细比标题/合计小一档，同样宽度能多显示几个字
+        private const float ItemFontScale = 0.85f;
+
         // 遮罩形状在 960×540 图里的范围（图像坐标，原点左上）
         private const float ShapeLeft = 676f / 960f;
         private const float ShapeRight = 753f / 960f;
@@ -47,7 +51,7 @@ namespace QoL
 
         // 文字安全区：横向取形状最窄段内缩，纵向尽量撑到形状上下沿
         private const float TextLeft = 685f / 960f;
-        private const float TextRight = 743f / 960f;
+        private const float TextRight = 745f / 960f; // 撑到形状下部窄区右沿，仍不出遮罩
         private const float TextTop = 186f / 540f;
         private const float TextBottom = 236f / 540f;
 
@@ -399,18 +403,19 @@ namespace QoL
                 float pad = font * 0.35f; // 商品名与「种类」都靠左侧黄线对齐
 
                 _title.fontSize = font;
-                _items.fontSize = font;
+                _items.fontSize = font * ItemFontScale; // 商品名缩小一个字号
                 _footerLeft.fontSize = font;
                 _footerRight.fontSize = font;
 
+                float itemPad = font * 0.12f; // 明细尽量靠左黄线，标题/合计不动
                 _title.margin = Vector4.zero;
-                _items.margin = new Vector4(pad, 0f, 0f, 0f);
+                _items.margin = new Vector4(itemPad, 0f, 0f, 0f);
                 _footerLeft.margin = new Vector4(pad, 0f, 0f, 0f);
                 _footerRight.margin = new Vector4(pad, 0f, 0f, 0f);
 
                 // 明细按实际可容纳宽度生成：能全显示就全显示，放不下才省略，
                 // 名字再长也不会越过右边黄线（黄线就是安全区右边界）。
-                float avail = w - pad - font * 0.2f; // 右侧再留一点余量
+                float avail = w - itemPad - font * 0.05f; // 只留极小余量，尽量吃满
                 Builder.Length = 0;
                 int shown = Mathf.Min(Kinds.Count, MaxKinds);
                 for (int i = 0; i < shown; i++)
