@@ -82,7 +82,7 @@ namespace QoL
         /// <summary>不需要放大镜鉴定就显示角标。</summary>
         internal ConfigEntry<bool> BerrySkipMagnifier { get; }
 
-        /// <summary>角标显示方式：符号 / 酿造评分。</summary>
+        /// <summary>角标文字写法：文字 / 优良中差 / ABCD。</summary>
         internal ConfigEntry<string> BerryDisplayMode { get; }
 
         internal int Count => _config.Entries.Count;
@@ -280,8 +280,8 @@ namespace QoL
                 "符号",
                 "荧光莓",
                 () => "显示方式",
-                new[] { "符号", "酿造评分", "甲乙丙丁", "文字", "优良中差", "ABCD" },
-                () => "符号：用十字/横杠/×/! 表示品质；酿造评分：直接写出这颗粒子能给的酒分（+2 / +1 / +0 / -1）；甲乙丙丁：用甲（最好）到丁（发霉）的序号标记，方块会大一圈；文字/优良中差/ABCD：都是彩色小底块 + 黑字，只是字不同（甲丁 / 优良中差 / ABCD），字号最小、最不挡视野。");
+                new[] { "文字", "优良中差", "ABCD" },
+                () => "角标文字的写法，都是彩色小底块配黑字：文字＝甲乙丙丁（甲最好、丁发霉）、优良中差＝优劣更直白、ABCD＝字母序号。底色固定：绿=优(+2)、黄=普通(+1)、灰=差(+0)、红=发霉(-1)。");
 
             // 把定义（可能带新的默认值）写回文件
             _config.Save();
