@@ -27,6 +27,9 @@ namespace QoL
     /// 字号按满 5 行固定算，不随物品数量变化。文字区套一层 RectMask2D 硬裁剪，
     /// 保证永远出不了遮罩形状；颜色固定 #172C3E，和屏幕原生文字一致。
     ///
+    /// 画布层级压在游戏窗口之下（SortingOrder=2，低于浮动窗口层 3 / 主 UI 900），
+    /// 别的窗口拖到收银机上面时会自然盖住统计层，不会浮在窗口上显得突兀。
+    ///
     /// 位置不写死屏幕比例：运行时找收银机 SpriteRenderer，用 bounds 经主相机投影出
     /// 整张贴图在屏幕上的矩形。换分辨率、相机缩放、换美化贴图都不会跑偏。
     ///
@@ -36,7 +39,11 @@ namespace QoL
     internal static class SelectionCount
     {
         private const float RefreshInterval = 0.1f;
-        private const int SortingOrder = 960;
+
+        // 压在游戏窗口之下：游戏可拖动窗口层是 3、主 UI 是 900、调试层 950。
+        // 取 2 让窗口移过来时能自然盖住统计层；仍是 ScreenSpaceOverlay，
+        // 所以照样画在场景里的收银机 SpriteRenderer 之上。
+        private const int SortingOrder = 2;
         private const int MaxKinds = 3;
         private const int RowSlots = 5; // 标题 1 + 明细 3 + 合计 1
 
@@ -255,7 +262,7 @@ namespace QoL
 
                 _canvas = _root.AddComponent<Canvas>();
                 _canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                _canvas.sortingOrder = SortingOrder;
+                _canvas.sortingOrder = BehindGameUIOrder();
                 CustomUIManager.AddScreenScaler(_root);
 
                 // 屏幕补丁：整张 960×540 图铺到收银机贴图矩形上，透明处不遮挡
@@ -378,10 +385,33 @@ namespace QoL
         // 定位：跟着游戏里真实的收银机走
         // ---------------------------------------------------------------
 
+        /// <summary>始终把统计层放在游戏窗口画布之下，窗口移过来时能自然盖住它。</summary>
+        private static int BehindGameUIOrder()
+        {
+            int order = SortingOrder;
+            try
+            {
+                RenderHandler handler = RenderHandler.current;
+                Canvas win = handler != null ? handler.windowUICanvas : null;
+                if (win != null && win.renderMode == RenderMode.ScreenSpaceOverlay)
+                {
+                    // 游戏会把已有画布层级整体 +1 来抬升浮动窗口，这里每次跟随
+                    order = Mathf.Min(order, win.sortingOrder - 1);
+                }
+            }
+            catch
+            {
+                // 场景切换途中拿不到，沿用兜底值
+            }
+            return order;
+        }
+
         private static void Reposition()
         {
             try
             {
+                _canvas.sortingOrder = BehindGameUIOrder();
+
                 float scale = _canvas != null && _canvas.scaleFactor > 0.001f
                     ? _canvas.scaleFactor : 1f;
 
