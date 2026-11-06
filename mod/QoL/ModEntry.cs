@@ -102,6 +102,7 @@ namespace QoL
             ModHook.OnCreateTooltipLate -= OnTooltipLate;
             QuickToolHotkey.Remove();
             QuickBoxSelect.Remove();
+            SelectionCount.Remove();
             DialogueSpeedUp.Remove();
             TradeResultPopup.Remove();
             DemandHighlight.Remove();

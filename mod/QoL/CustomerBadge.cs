@@ -241,7 +241,7 @@ namespace QoL
         /// 找一个支持中文的字体。优先用提示框正在用的那个（和游戏原生文字一致），
         /// 其次在场景里随便找一个 TMP 文字借用，最后才退回 TMP 默认字体。
         /// </summary>
-        private static TMP_FontAsset ResolveFont()
+        internal static TMP_FontAsset ResolveFont()
         {
             TMP_FontAsset font = ItemTypeBadge.CurrentFont;
             if (font != null)

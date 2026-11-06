@@ -72,6 +72,9 @@ namespace QoL
         /// <summary>便捷框选：一个下拉同时管开关与长按时长（含「关闭」）。</summary>
         internal ConfigEntry<string> BoxSelectMode { get; }
 
+        /// <summary>框选统计：选中物品时显示每种物品的数量与合计。</summary>
+        internal ConfigEntry<bool> SelectionCountEnabled { get; }
+
         /// <summary>调试面板：一个下拉同时管开关与自定义快捷键。</summary>
         internal ConfigEntry<string> DebugPanelMode { get; }
 
@@ -210,16 +213,23 @@ namespace QoL
                 () => "双击快捷键批量改标签",
                 () => "框选多个同类物品后，连按两下标签机快捷键，改一个标签就同步给全部。不框选时仍是单件用法。");
 
-            // ---------------- 便捷框选 ----------------
+            // ---------------- 框选 ----------------
             // 键名沿用旧版 select.hold_ms（旧值是 "180" 这类数字），合并后的下拉
             // 仍包含这些数字，玩家已选的时长不会丢；新增「关闭」代替原来的独立开关。
             BoxSelectMode = _config.Define(
                 "select.hold_ms",
                 "180",
-                "便捷框选",
+                "框选",
                 () => "长按触发时长（毫秒）",
                 new[] { BoxSelectOff, "120", "180", "250", "350" },
                 () => "在物品上按住左键不动，到时间就能拉出框选框，容器装满也一样。数字越小越灵敏、越大越不容易误触；选「关闭」则不启用。");
+
+            SelectionCountEnabled = _config.Define(
+                "select.count_panel",
+                true,
+                "框选",
+                () => "框选统计",
+                () => "框中一批物品时显示每种物品有几堆、共几个，以及合计。点面板右上角 × 可关到下次框选。");
 
             // ---------------- 开发者 ----------------
             // 键名沿用旧版 dev.panel_hotkey，玩家已经选过的按键不会丢。

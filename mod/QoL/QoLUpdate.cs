@@ -76,6 +76,9 @@ namespace QoL
                 // 便捷框选：长按左键从物品上起拖框选（内部有位移阈值，不动就不干活）
                 QuickBoxSelect.Tick();
 
+                // 框选统计：选中物品时列出每种数量与合计（内部 0.1 秒限流）
+                SelectionCount.Tick();
+
                 // F9 调试面板：汉化 + 自定义开关键（内部判空/限流）
                 DebugPanelZh.Tick();
 
