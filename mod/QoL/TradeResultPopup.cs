@@ -18,7 +18,8 @@ namespace QoL
     ///   - postfix 用第 3 个参数 originalValue 取实际成交金额（= playerCash 的增减），
     ///     累加进整单金额；第 2 个参数 value 是声望基数、会被阵营倍率改写，不能当钱用
     ///   - 「出售 N 物品」会逐件回调，Tick 等 0.15s 静默后弹一条合计，避免气泡互相覆盖
-    ///   - 声望同样压进延迟队列，到点后弹
+    ///   - 声望同样累加整单增量，1.5 秒后弹一条合计（游戏把声望 clamp 到 ±200，
+    ///     到顶/见底时差值为 0，改弹「声望已满 / 已见底」）
     ///   都用游戏自带的 ReputationUIManager.Notify(message) 气泡，不画新 UI。
     /// </summary>
     internal static class TradeResultPopup
@@ -45,8 +46,10 @@ namespace QoL
         private static double _repBefore2;
         private static bool _repCaptured2;
 
-        /// <summary>待弹出的声望文案（非空表示有排队中）。</summary>
-        private static string _pendingRepMessage;
+        /// <summary>本单累计声望变化。逐件结算会回调多次，弹合计才是真实增量。</summary>
+        private static double _pendingRepDelta;
+        private static string _pendingRepFaction;
+        private static bool _pendingRepHasTrade;
         private static float _pendingRepTimer;
 
         private static bool Enabled
@@ -130,7 +133,10 @@ namespace QoL
                 _harmony = null;
             }
 
-            _pendingRepMessage = null;
+            _pendingRepFaction = null;
+            _pendingRepDelta = 0.0;
+            _pendingRepHasTrade = false;
+            _pendingRepTimer = 0f;
             _pendingCash = 0;
             _cashFlushTimer = 0f;
         }
@@ -157,7 +163,7 @@ namespace QoL
                 }
             }
 
-            if (string.IsNullOrEmpty(_pendingRepMessage))
+            if (string.IsNullOrEmpty(_pendingRepFaction))
             {
                 return;
             }
@@ -168,13 +174,22 @@ namespace QoL
                 return;
             }
 
-            ReputationUIManager ui = ReputationUIManager.Instance;
-            if (ui != null)
-            {
-                ui.Notify(_pendingRepMessage);
-            }
+            string faction = _pendingRepFaction;
+            double delta = _pendingRepDelta;
+            bool hasTrade = _pendingRepHasTrade;
+            _pendingRepFaction = null;
+            _pendingRepDelta = 0.0;
+            _pendingRepHasTrade = false;
 
-            _pendingRepMessage = null;
+            string message = BuildRepMessage(faction, delta, hasTrade);
+            if (!string.IsNullOrEmpty(message))
+            {
+                ReputationUIManager ui = ReputationUIManager.Instance;
+                if (ui != null)
+                {
+                    ui.Notify(message);
+                }
+            }
         }
 
         private static void Prefix(string factionId)
@@ -228,13 +243,23 @@ namespace QoL
                     return;
                 }
 
-                // 2. 声望压进延迟队列，1.5 秒后再弹（避免和金额气泡叠在一起）
-                string repMessage = BuildRepMessage(factionId, repDelta, rep.GetReputationExact(), cash);
-                if (!string.IsNullOrEmpty(repMessage))
+                // 2. 声望累加：逐件回调只弹一条合计。
+                //    原来每次都覆盖队列，卖 4 件就只显示最后一件的增量，比实际涨幅少一大截。
+                if (!string.IsNullOrEmpty(_pendingRepFaction) && _pendingRepFaction != factionId)
                 {
-                    _pendingRepMessage = repMessage;
-                    _pendingRepTimer = RepDelaySeconds;
+                    // 一单里换了阵营（极少见），清掉上一个阵营的账，避免数值串在一起
+                    _pendingRepDelta = 0.0;
+                    _pendingRepHasTrade = false;
                 }
+
+                _pendingRepFaction = factionId;
+                _pendingRepDelta += repDelta;
+                if (cash != 0)
+                {
+                    _pendingRepHasTrade = true;
+                }
+
+                _pendingRepTimer = RepDelaySeconds;
             }
             catch (Exception e)
             {
@@ -250,7 +275,7 @@ namespace QoL
                 : "支付宝扣款：-" + Math.Abs(cash).ToString(CultureInfo.InvariantCulture) + "元");
         }
 
-        private static string BuildRepMessage(string factionId, double repDelta, double currentRep, long cash)
+        private static string BuildRepMessage(string factionId, double repDelta, bool hasTrade)
         {
             string faction = StoreReputation.GetFactionNameByID(factionId);
 
@@ -261,10 +286,21 @@ namespace QoL
                        Math.Abs(repDelta).ToString("0.####", CultureInfo.InvariantCulture);
             }
 
-            if (cash != 0 && currentRep >= 200.0)
+            // 游戏把声望 clamp 在 [-200, 200]（CheckReputation）。到顶或见底时差值恒为 0，
+            // 但交易确实发生了，给个说明免得以为没生效。原来只判了上限，下限会静默无提示。
+            if (hasTrade)
             {
-                // 声望已达上限，提示一下避免误解
-                return faction + "声望已满";
+                StoreReputation rep = StoreReputation.GetStoreReputation(factionId);
+                double current = rep != null ? rep.GetReputationExact() : 0.0;
+                if (current >= 200.0)
+                {
+                    return faction + "声望已满";
+                }
+
+                if (current <= -200.0)
+                {
+                    return faction + "声望已见底";
+                }
             }
 
             return null;
