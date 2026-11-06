@@ -25,7 +25,7 @@ namespace QoL
     ///             明细字号比标题/合计小一档（ItemFontScale），同样宽度能多塞几个字；
     ///   底部一行：以中线为界左「种类 N」右「数量 M」，各自左对齐、贴安全区底。
     /// 字号按满 5 行固定算，不随物品数量变化。文字区套一层 RectMask2D 硬裁剪，
-    /// 保证永远出不了遮罩形状；颜色固定 #172C3E，和屏幕原生文字一致。
+    /// 保证永远出不了遮罩形状；颜色固定 #CB7A59，和原版屏幕上的字一致。
     ///
     /// 画布层级压在游戏窗口之下（SortingOrder=2，低于浮动窗口层 3 / 主 UI 900），
     /// 别的窗口拖到收银机上面时会自然盖住统计层，不会浮在窗口上显得突兀。
@@ -316,7 +316,7 @@ namespace QoL
         private static void SetupText(TMP_Text t)
         {
             t.font = CustomerBadge.ResolveFont();
-            t.color = new Color32(0x17, 0x2C, 0x3E, 0xFF); // #172C3E
+            t.color = new Color32(0xCB, 0x7A, 0x59, 0xFF); // #CB7A59，和原版屏幕上的字一个色
             t.enableWordWrapping = false;
             t.overflowMode = TextOverflowModes.Overflow; // 越界交给 RectMask2D 裁掉
             t.raycastTarget = false;

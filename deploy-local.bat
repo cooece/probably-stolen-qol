@@ -1,0 +1,45 @@
+@echo off
+rem 把最新构建部署到游戏里的本地副本，并把遮罩换成【蓝色】（配合 HUD 美化模组）。
+rem 发布到工坊的包用的是原版米黄遮罩，两者互不影响。
+rem 用法：先跑 package.bat，再双击本文件；之后启动游戏。
+
+set "MODDIR=C:\Program Files (x86)\Steam\steamapps\common\Probably Stolen\Mods"
+set "SRC=%~dp0dist\workshop"
+set "TARGET="
+
+if not exist "%SRC%\QoL.dll" goto :nobuild
+
+if exist "%MODDIR%\qol_local" set "TARGET=%MODDIR%\qol_local"
+if not defined TARGET if exist "%MODDIR%\qol" set "TARGET=%MODDIR%\qol"
+if not defined TARGET goto :notarget
+
+tasklist /fi "imagename eq Probably Stolen.exe" 2>nul | find /i "Probably Stolen.exe" >nul
+if not errorlevel 1 goto :running
+
+copy /Y "%SRC%\QoL.dll" "%TARGET%\" >nul
+copy /Y "%SRC%\manifest.xml" "%TARGET%\" >nul
+if exist "%~dp0workshop\mask-blue.png" (
+    copy /Y "%~dp0workshop\mask-blue.png" "%TARGET%\negociation_tablet_ScreenOverlay.png" >nul
+    echo 遮罩：蓝色（本机 HUD 配色）
+) else (
+    copy /Y "%SRC%\negociation_tablet_ScreenOverlay.png" "%TARGET%\" >nul
+    echo 遮罩：原版米黄（没找到 mask-blue.png）
+)
+
+echo 已部署到本地副本：%TARGET%
+goto :end
+
+:running
+echo 游戏还在运行，先退出游戏。
+goto :end
+
+:nobuild
+echo 找不到 dist\workshop\QoL.dll，先运行 package.bat。
+goto :end
+
+:notarget
+echo 找不到 Mods\qol 或 Mods\qol_local，检查游戏目录。
+goto :end
+
+:end
+pause
