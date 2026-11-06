@@ -231,8 +231,8 @@ namespace QoL
         /// <summary>字号。9 号在 32px 的图标上刚好占下半边多一点。</summary>
         private const float TextSize = 9f;
 
-        /// <summary>相对图标中心的偏移，往右上角靠。</summary>
-        private static readonly Vector2 TextOffset = new Vector2(9f, 8f);
+        /// <summary>距图标右上角的内缩量（像素）。横竖各留 1，字正好压在角上。</summary>
+        private static readonly Vector2 TextInset = new Vector2(1f, 1f);
 
         private static int _textLogged;
         private static bool _textEntered;
@@ -392,10 +392,15 @@ namespace QoL
                 }
             }
 
-            rect.sizeDelta = new Vector2(40f, 12f);
-            rect.anchoredPosition = TextOffset;
+            // 用锚点钉在父节点的右上角，而不是靠中心偏移去凑——
+            // 图标多大、外层怎么缩放，字都稳稳待在右上角，不会浮到果实上方。
+            rect.anchorMin = new Vector2(1f, 1f);
+            rect.anchorMax = new Vector2(1f, 1f);
+            rect.pivot = new Vector2(1f, 1f);
+            rect.sizeDelta = new Vector2(26f, 12f);
+            rect.anchoredPosition = new Vector2(-TextInset.x, -TextInset.y);
 
-            txt.alignment = TextAlignmentOptions.Center;
+            txt.alignment = TextAlignmentOptions.TopRight;
             txt.fontStyle = FontStyles.Bold;
             txt.fontSize = TextSize;
             txt.raycastTarget = false;
@@ -410,7 +415,7 @@ namespace QoL
                     : Vector2.zero;
                 QLog.Info("荧光莓文字：已创建，图标 " + icon.x + "x" + icon.y
                           + "，字体 " + (txt.font != null ? txt.font.name : "无")
-                          + "，字号 " + TextSize + "，偏移 " + TextOffset.x + "," + TextOffset.y);
+                          + "，字号 " + TextSize + "，内缩 " + TextInset.x + "," + TextInset.y);
             }
 
             var result = new TextRef { Text = txt, Rect = rect };
