@@ -11,16 +11,18 @@ using UnityEngine.UI;
 namespace QoL
 {
     /// <summary>
-    /// 框选统计：框中一批物品时，右侧收银机的屏幕切成统计页。
+    /// 框选统计：框中一批物品时，右侧收银机的浅蓝屏幕切成统计页。
     ///
-    /// 做法：把玩家画的「干净收银机」遮罩图（negociation_tablet_Mask.png，
-    /// 就是把屏幕上原有的 Useful info 擦掉那版）按游戏里收银机的真实位置盖上去，
-    /// 再把统计文字写进那块浅蓝屏幕里。遮罩图和工坊美化 MOD 的贴图同为 960×540、
-    /// 机器像素位置完全一致，所以能严丝合缝地盖住，不需要改任何别的 MOD 文件。
+    /// 遮罩图 negociation_tablet_ScreenOverlay.png 是玩家画的「干净屏幕补丁」：
+    /// 整图 960×540，只有屏幕那块不透明（上宽下窄、两侧斜切），其余全透明。
+    /// 把它铺到游戏里收银机 SpriteRenderer 对应的整张贴图矩形上，正好盖掉原有的
+    /// Useful info，同时不会碰到机器其它部分。
     ///
-    /// 位置不写死屏幕比例：运行时找到收银机的 SpriteRenderer，用它的 bounds 经主相机
-    /// 投影出整张贴图在屏幕上的矩形，再按贴图内部比例取出浅蓝屏幕。换分辨率、
-    /// 相机缩放、换美化贴图都不会跑偏。找不到对象时退回按真实截图估的比例。
+    /// 文字区用贴图比例锚在遮罩形状内部的安全矩形里，再套一层 RectMask2D 硬裁剪，
+    /// 保证怎么算都不会跑到形状外。文字颜色固定 #172C3E，和屏幕原生文字一致。
+    ///
+    /// 位置不写死屏幕比例：运行时找收银机 SpriteRenderer，用 bounds 经主相机投影出
+    /// 整张贴图在屏幕上的矩形。换分辨率、相机缩放、换美化贴图都不会跑偏。
     ///
     /// 数据来源：ItemMultiSelectHandler 的私有 selectedItems，反射读取。
     /// 屏幕小，最多列数量最多的 3 种，合计仍算整批。
@@ -30,19 +32,25 @@ namespace QoL
         private const float RefreshInterval = 0.1f;
         private const int SortingOrder = 960;
         private const int MaxKinds = 3;
-        private const int MaxNameChars = 9;
+        private const int MaxNameChars = 5;
 
-        // 浅蓝屏幕在 960×540 遮罩图里的范围（图像坐标，原点左上）
-        private const float ScreenLeft = 661f / 960f;
-        private const float ScreenRight = 770f / 960f;
-        private const float ScreenTop = 183f / 540f;
-        private const float ScreenBottom = 245f / 540f;
+        // 遮罩形状在 960×540 图里的范围（图像坐标，原点左上）
+        private const float ShapeLeft = 676f / 960f;
+        private const float ShapeRight = 753f / 960f;
+        private const float ShapeTop = 184f / 540f;
+        private const float ShapeBottom = 237f / 540f;
 
-        // 兜底位置：找不到收银机对象时，按真实游戏截图估的游戏区域比例
-        private const float FallbackX = 0.519f;
-        private const float FallbackW = 0.258f;
-        private const float FallbackTopFromBottom = 0.855f;
-        private const float FallbackH = 0.265f;
+        // 文字安全区：取形状最窄的下半段，再各留 2~4 px 边距
+        private const float TextLeft = 685f / 960f;
+        private const float TextRight = 743f / 960f;
+        private const float TextTop = 188f / 540f;
+        private const float TextBottom = 233f / 540f;
+
+        // 兜底：找不到收银机对象时，按真实截图估的屏幕区域比例（相对游戏区域）
+        private const float FallbackLeft = 0.5595f;
+        private const float FallbackRight = 0.8284f;
+        private const float FallbackTopFromBottom = 0.7780f;
+        private const float FallbackBottomFromBottom = 0.4892f;
 
         private static readonly FieldInfo SelectedField =
             AccessTools.Field(typeof(ItemMultiSelectHandler), "selectedItems");
@@ -59,18 +67,19 @@ namespace QoL
 
         private static GameObject _root;
         private static Canvas _canvas;
-        private static RectTransform _mask;
-        private static Image _maskImage;
-        private static RectTransform _panel;
+        private static RectTransform _patch;
+        private static Image _patchImage;
+        private static RectTransform _clip;
         private static TMP_Text _text;
 
         private static SpriteRenderer _register;
-        private static Sprite _maskSprite;
-        private static bool _maskLoadFailed;
+        private static Sprite _patchSprite;
+        private static bool _patchLoadFailed;
 
         private static float _nextRefresh;
         private static bool _failed;
         private static string _lastText = "";
+        private static int _rows = 3;
 
         private static bool Enabled
         {
@@ -169,34 +178,34 @@ namespace QoL
             for (int i = 0; i < Kinds.Count; i++) total += Kinds[i].Units;
 
             Builder.Length = 0;
-            Builder.Append("<color=#FFE9A8><size=120%><b>商品统计</b></size></color>\n");
+            Builder.Append("<b>商品统计</b>\n");
 
             // 屏幕小，只列数量最多的前 3 种；名字太长截一下
             int shown = Mathf.Min(Kinds.Count, MaxKinds);
             for (int i = 0; i < shown; i++)
             {
                 Kind k = Kinds[i];
+                // 截断后连同省略号也不超过 MaxNameChars 个字符
                 string name = k.Name.Length > MaxNameChars
-                    ? k.Name.Substring(0, MaxNameChars) + "…"
+                    ? k.Name.Substring(0, MaxNameChars - 1) + "…"
                     : k.Name;
 
-                Builder.Append("<color=#FFD54A>").Append(name)
-                       .Append(" ×").Append(k.Units).Append("</color>\n");
+                Builder.Append(name).Append(" ×").Append(k.Units).Append('\n');
             }
 
             // 合计始终算整批物品，不因为只列 3 种而少算
-            Builder.Append("<color=#FFE9A8>");
             if (Kinds.Count > shown)
             {
-                Builder.Append("还有 ").Append(Kinds.Count - shown)
-                       .Append(" 种，共 ").Append(total).Append(" 个");
+                Builder.Append("还有 ").Append(Kinds.Count - shown).Append(" 种\n");
+                Builder.Append("共 ").Append(total).Append(" 个");
+                _rows = shown + 3;
             }
             else
             {
-                Builder.Append("共 ").Append(Kinds.Count)
-                       .Append(" 种，").Append(total).Append(" 个");
+                Builder.Append("共 ").Append(Kinds.Count).Append(" 种，")
+                       .Append(total).Append(" 个");
+                _rows = shown + 2;
             }
-            Builder.Append("</color>");
             return Builder.ToString();
         }
 
@@ -244,12 +253,13 @@ namespace QoL
 
             _root = null;
             _canvas = null;
-            _mask = null;
-            _maskImage = null;
-            _panel = null;
+            _patch = null;
+            _patchImage = null;
+            _clip = null;
             _text = null;
             _register = null;
             _lastText = "";
+            _rows = 3;
             _failed = false;
         }
 
@@ -268,34 +278,46 @@ namespace QoL
                 _canvas.sortingOrder = SortingOrder;
                 CustomUIManager.AddScreenScaler(_root);
 
-                // 遮罩：整张 960×540 图，左下角对齐；盖住收银机原有的 Useful info
-                var maskGo = new GameObject("Mask", typeof(RectTransform));
-                maskGo.transform.SetParent(_root.transform, false);
-                _mask = (RectTransform)maskGo.transform;
-                _mask.anchorMin = Vector2.zero;
-                _mask.anchorMax = Vector2.zero;
-                _mask.pivot = Vector2.zero;
+                // 屏幕补丁：整张 960×540 图铺到收银机贴图矩形上，透明处不遮挡
+                var patchGo = new GameObject("ScreenPatch", typeof(RectTransform));
+                patchGo.transform.SetParent(_root.transform, false);
+                _patch = (RectTransform)patchGo.transform;
+                _patch.anchorMin = Vector2.zero;
+                _patch.anchorMax = Vector2.zero;
+                _patch.pivot = Vector2.zero;
 
-                _maskImage = maskGo.AddComponent<Image>();
-                _maskImage.raycastTarget = false;
-                _maskImage.preserveAspect = false;
-                Sprite mask = LoadMask();
-                _maskImage.sprite = mask;
-                _maskImage.enabled = mask != null;
+                _patchImage = patchGo.AddComponent<Image>();
+                _patchImage.raycastTarget = false;
+                _patchImage.preserveAspect = false;
+                _patchImage.sprite = LoadPatch();
+                _patchImage.enabled = false; // 定位准确才盖，避免错位的重影
 
-                // 文字：左上角对齐到浅蓝屏幕左上角
+                // 裁剪框：用贴图比例锚在补丁内部，文字永远出不了这个矩形
+                var clipGo = new GameObject("Clip", typeof(RectTransform));
+                clipGo.transform.SetParent(_patch, false);
+                _clip = (RectTransform)clipGo.transform;
+                _clip.anchorMin = new Vector2(TextLeft, 1f - TextBottom);
+                _clip.anchorMax = new Vector2(TextRight, 1f - TextTop);
+                _clip.offsetMin = Vector2.zero;
+                _clip.offsetMax = Vector2.zero;
+                clipGo.AddComponent<RectMask2D>();
+
+                // 文字：铺满裁剪框
                 var textGo = new GameObject("Text", typeof(RectTransform));
-                textGo.transform.SetParent(_root.transform, false);
-                _panel = (RectTransform)textGo.transform;
-                _panel.anchorMin = new Vector2(0f, 1f);
-                _panel.anchorMax = new Vector2(0f, 1f);
-                _panel.pivot = new Vector2(0f, 1f);
+                textGo.transform.SetParent(_clip, false);
+                RectTransform tr = (RectTransform)textGo.transform;
+                tr.anchorMin = Vector2.zero;
+                tr.anchorMax = Vector2.one;
+                tr.offsetMin = Vector2.zero;
+                tr.offsetMax = Vector2.zero;
 
                 _text = textGo.AddComponent<TextMeshProUGUI>();
                 _text.font = CustomerBadge.ResolveFont();
+                _text.color = new Color32(0x17, 0x2C, 0x3E, 0xFF); // #172C3E
                 _text.alignment = TextAlignmentOptions.TopLeft;
                 _text.enableWordWrapping = false;
-                _text.overflowMode = TextOverflowModes.Overflow;
+                _text.overflowMode = TextOverflowModes.Overflow; // 越界交给 RectMask2D 裁掉
+                _text.margin = Vector4.zero;
                 _text.raycastTarget = false;
 
                 _root.SetActive(false);
@@ -310,19 +332,19 @@ namespace QoL
             }
         }
 
-        /// <summary>从 MOD 目录读玩家画的干净收银机图，只读一次。</summary>
-        private static Sprite LoadMask()
+        /// <summary>从 MOD 目录读玩家画的干净屏幕补丁，只读一次。</summary>
+        private static Sprite LoadPatch()
         {
-            if (_maskSprite != null) return _maskSprite;
-            if (_maskLoadFailed) return null;
+            if (_patchSprite != null) return _patchSprite;
+            if (_patchLoadFailed) return null;
 
             try
             {
                 string dir = Path.GetDirectoryName(typeof(SelectionCount).Assembly.Location);
-                string file = Path.Combine(dir, "negociation_tablet_Mask.png");
+                string file = Path.Combine(dir, "negociation_tablet_ScreenOverlay.png");
                 if (!File.Exists(file))
                 {
-                    _maskLoadFailed = true;
+                    _patchLoadFailed = true;
                     QLog.Warn("框选统计：找不到遮罩图 " + file);
                     return null;
                 }
@@ -333,19 +355,19 @@ namespace QoL
                 tex.wrapMode = TextureWrapMode.Clamp;
                 if (!tex.LoadImage(data))
                 {
-                    _maskLoadFailed = true;
+                    _patchLoadFailed = true;
                     UnityEngine.Object.Destroy(tex);
                     return null;
                 }
 
-                _maskSprite = Sprite.Create(tex,
+                _patchSprite = Sprite.Create(tex,
                     new Rect(0f, 0f, tex.width, tex.height),
                     new Vector2(0.5f, 0.5f), 100f);
-                return _maskSprite;
+                return _patchSprite;
             }
             catch (Exception e)
             {
-                _maskLoadFailed = true;
+                _patchLoadFailed = true;
                 QLog.Warn("框选统计：遮罩图加载失败 —— " + e.Message);
                 return null;
             }
@@ -364,54 +386,55 @@ namespace QoL
 
                 Rect texRect;
                 bool exact = TryGetTextureScreenRect(out texRect);
-                if (!exact)
-                {
-                    float areaW = LetterboxManager.GameAreaWidth;
-                    float areaH = LetterboxManager.GameAreaHeight;
-                    if (areaW <= 1f || areaH <= 1f)
-                    {
-                        areaW = Screen.width;
-                        areaH = Screen.height;
-                    }
+                if (!exact) texRect = FallbackTextureRect();
 
-                    // 兜底只有屏幕区域，遮罩整图按同一比例反推
-                    float x = LetterboxManager.GameAreaX + FallbackX * areaW;
-                    float yTop = LetterboxManager.GameAreaY + FallbackTopFromBottom * areaH;
-                    float w = FallbackW * areaW;
-                    float h = FallbackH * areaH;
-                    texRect = Rect.MinMaxRect(
-                        x - w * (ScreenLeft / (ScreenRight - ScreenLeft)),
-                        yTop - h * ((1f - ScreenTop) / (ScreenBottom - ScreenTop)),
-                        x + w * ((1f - ScreenRight) / (ScreenRight - ScreenLeft)) + w,
-                        yTop + h * (ScreenTop / (ScreenBottom - ScreenTop)));
-                }
+                _patch.position = new Vector3(texRect.xMin, texRect.yMin, 0f);
+                _patch.sizeDelta = new Vector2(texRect.width / scale, texRect.height / scale);
+                _patchImage.enabled = exact && _patchImage.sprite != null;
 
-                // 遮罩：整张贴图铺到 texRect
-                _mask.position = new Vector3(texRect.xMin, texRect.yMin, 0f);
-                _mask.sizeDelta = new Vector2(texRect.width / scale, texRect.height / scale);
-                // 定位不准时宁可不盖，避免出现两台收银机错位的重影
-                _maskImage.enabled = exact && _maskImage.sprite != null;
-
-                // 文字：贴图里浅蓝屏幕那一小块
-                float sx0 = Mathf.Lerp(texRect.xMin, texRect.xMax, ScreenLeft);
-                float sx1 = Mathf.Lerp(texRect.xMin, texRect.xMax, ScreenRight);
-                float syTop = Mathf.Lerp(texRect.yMax, texRect.yMin, ScreenTop);
-                float syBottom = Mathf.Lerp(texRect.yMax, texRect.yMin, ScreenBottom);
-
-                float wLogical = (sx1 - sx0) / scale;
-                float hLogical = (syTop - syBottom) / scale;
-                _panel.position = new Vector3(sx0, syTop, 0f);
-                _panel.sizeDelta = new Vector2(wLogical, hLogical);
-
-                // 字号跟着屏幕大小走；留边距避开两侧斜切角
-                _text.fontSize = Mathf.Clamp(hLogical / 6.5f, 12f, 56f);
-                _text.margin = new Vector4(wLogical * 0.09f, hLogical * 0.07f,
-                                           wLogical * 0.09f, hLogical * 0.04f);
+                // 字号同时受行数和宽度约束，保证每行都塞得进安全矩形
+                float wLogical = _patch.rect.width * (TextRight - TextLeft);
+                float hLogical = _patch.rect.height * (TextBottom - TextTop);
+                // 1.35 留足行距，避免不同中文字体的行高把最后一行挤出裁剪框
+                float byHeight = hLogical / (Mathf.Max(3, _rows) * 1.35f);
+                float byWidth = wLogical / 7.8f;
+                _text.fontSize = Mathf.Clamp(Mathf.Min(byHeight, byWidth), 8f, 40f);
             }
             catch (Exception e)
             {
                 QLog.Warn("框选统计：定位失败 —— " + e.Message);
             }
+        }
+
+        /// <summary>找不到收银机对象时，按屏幕区域比例反推整张贴图矩形。</summary>
+        private static Rect FallbackTextureRect()
+        {
+            float bx = 0f;
+            float by = 0f;
+            float areaW = LetterboxManager.GameAreaWidth;
+            float areaH = LetterboxManager.GameAreaHeight;
+            if (areaW > 1f && areaH > 1f)
+            {
+                bx = LetterboxManager.GameAreaX;
+                by = LetterboxManager.GameAreaY;
+            }
+            else
+            {
+                areaW = Screen.width;
+                areaH = Screen.height;
+            }
+
+            Rect shape = Rect.MinMaxRect(
+                bx + FallbackLeft * areaW,
+                by + FallbackBottomFromBottom * areaH,
+                bx + FallbackRight * areaW,
+                by + FallbackTopFromBottom * areaH);
+
+            float texW = shape.width / (ShapeRight - ShapeLeft);
+            float texH = shape.height / (ShapeBottom - ShapeTop);
+            float xMin = shape.xMin - ShapeLeft * texW;
+            float yMax = shape.yMax + ShapeTop * texH;
+            return Rect.MinMaxRect(xMin, yMax - texH, xMin + texW, yMax);
         }
 
         /// <summary>整张收银机贴图在屏幕上的矩形（屏幕像素，原点左下）。</summary>
