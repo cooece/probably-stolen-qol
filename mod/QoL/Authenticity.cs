@@ -152,10 +152,12 @@ namespace QoL
 
             // 水质虚标：标签档位比真实档位好
             ItemFeature water = WaterFeature(item);
+            int waterPurity = water != null ? WaterHelper.GetWaterPurity(item) : 0;
+
             if (water != null && !water.IsExposed())
             {
                 int label = water.customIntValue1;
-                int actual = WaterHelper.GetWaterPurity(item);
+                int actual = waterPurity;
                 if (WaterFeatureHelper.GetPurityArrayIndex(label) > WaterFeatureHelper.GetPurityArrayIndex(actual))
                 {
                     string percent = (actual / 100f).ToString("0.00", CultureInfo.InvariantCulture) + "%";
@@ -213,7 +215,7 @@ namespace QoL
             // 水容器没有其它特征时，也把真实水质报出来
             if (water != null)
             {
-                int actual = WaterHelper.GetWaterPurity(item);
+                int actual = waterPurity;
                 string percent = (actual / 100f).ToString("0.00", CultureInfo.InvariantCulture) + "%";
                 string text = "水质：" + WaterFeatureHelper.GetWaterDisplayName(actual) + " " + percent;
 

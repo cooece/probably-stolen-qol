@@ -295,19 +295,38 @@ namespace QoL
             try
             {
                 if (_menuState == null || _menuState.ActiveButtons.Count == 0) return;
-                List<RichTextElement> allButtons = _menuState.OriginalButtons
-                    .Concat(_menuState.ActiveButtons.Select(x => x.Element))
-                    .ToList();
 
-                foreach (RichTextElement b in allButtons)
+                int origCount = _menuState.OriginalButtons != null ? _menuState.OriginalButtons.Length : 0;
+                int activeCount = _menuState.ActiveButtons.Count;
+                var allButtons = new List<RichTextElement>(origCount + activeCount);
+
+                for (int i = 0; i < origCount; i++)
                 {
-                    b.SetFixedSize(-1, -1);
+                    allButtons.Add(_menuState.OriginalButtons[i]);
                 }
 
-                int maxWidth = allButtons.Max(b => b.widthPixels);
-                foreach (RichTextElement b in allButtons)
+                for (int i = 0; i < activeCount; i++)
                 {
-                    b.SetFixedSize(maxWidth, -1);
+                    allButtons.Add(_menuState.ActiveButtons[i].Element);
+                }
+
+                for (int i = 0; i < allButtons.Count; i++)
+                {
+                    allButtons[i].SetFixedSize(-1, -1);
+                }
+
+                int maxWidth = 0;
+                for (int i = 0; i < allButtons.Count; i++)
+                {
+                    if (allButtons[i].widthPixels > maxWidth)
+                    {
+                        maxWidth = allButtons[i].widthPixels;
+                    }
+                }
+
+                for (int i = 0; i < allButtons.Count; i++)
+                {
+                    allButtons[i].SetFixedSize(maxWidth, -1);
                 }
 
                 GridPixelElement curGrid = GetGridForCount(_menuState, _menuState.ActiveButtons.Count);
@@ -339,7 +358,16 @@ namespace QoL
                 return true;
             }
 
-            ExtraButton matched = _menuState.ActiveButtons.FirstOrDefault(x => x.Element == button);
+            ExtraButton matched = null;
+            for (int i = 0; i < _menuState.ActiveButtons.Count; i++)
+            {
+                if (_menuState.ActiveButtons[i].Element == button)
+                {
+                    matched = _menuState.ActiveButtons[i];
+                    break;
+                }
+            }
+
             if (matched == null)
             {
                 return true;
@@ -374,8 +402,20 @@ namespace QoL
             }
 
             Vector3 mouse = Input.mousePosition;
-            if (IsInsideNode(_menuState.Window.handler, mouse) ||
-                _menuState.ActiveButtons.Any(x => IsInsideNode(x.Element.handler, mouse)))
+            bool inside = IsInsideNode(_menuState.Window.handler, mouse);
+            if (!inside)
+            {
+                for (int i = 0; i < _menuState.ActiveButtons.Count; i++)
+                {
+                    if (IsInsideNode(_menuState.ActiveButtons[i].Element.handler, mouse))
+                    {
+                        inside = true;
+                        break;
+                    }
+                }
+            }
+
+            if (inside)
             {
                 __result = _menuState.Window.handler.gameObject;
             }
@@ -410,8 +450,15 @@ namespace QoL
             // 布局指纹 = 当前 grid 引用 + 我的按钮 key 列表。
             // 其他模组会替换 contextWindow 的 grid，所以必须把 grid 引用也算进去，
             // 否则 grid 被换掉后我的按钮会丢失。
-            string layoutFingerprint = state.OriginalGrid.GetHashCode() + "|" +
-                string.Join(",", state.ActiveButtons.Select(x => x.Key));
+            var sb = new System.Text.StringBuilder();
+            sb.Append(state.OriginalGrid.GetHashCode()).Append('|');
+            for (int i = 0; i < state.ActiveButtons.Count; i++)
+            {
+                if (i > 0) sb.Append(',');
+                sb.Append(state.ActiveButtons[i].Key);
+            }
+
+            string layoutFingerprint = sb.ToString();
             if (layoutFingerprint == state.CurrentLayout)
             {
                 return;

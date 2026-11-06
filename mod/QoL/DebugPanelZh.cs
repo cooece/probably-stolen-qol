@@ -28,6 +28,10 @@ namespace QoL
 
         private static Harmony _harmony;
 
+        // 缓存解析后的热键，避免每帧 Enum.TryParse。值变了才重新解析。
+        private static string _cachedHotkey;
+        private static KeyCode _cachedKey;
+
         private static bool Enabled
         {
             get
@@ -272,7 +276,22 @@ namespace QoL
             }
 
             KeyCode key;
-            if (!Enum.TryParse(name, out key) || !Input.GetKeyDown(key))
+            if (name == _cachedHotkey)
+            {
+                key = _cachedKey;
+            }
+            else
+            {
+                if (!Enum.TryParse(name, out key))
+                {
+                    return;
+                }
+
+                _cachedHotkey = name;
+                _cachedKey = key;
+            }
+
+            if (!Input.GetKeyDown(key))
             {
                 return;
             }

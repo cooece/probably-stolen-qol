@@ -148,9 +148,6 @@ namespace QoL
 
         private static int _logged;
 
-        // 诊断：统计识别到荧光莓的次数，只打印前几次定位问题
-        private static int _diagBerryHits;
-
         // ------------------------------------------------------------------
         // 注册
         // ------------------------------------------------------------------
@@ -300,7 +297,7 @@ namespace QoL
                 if (_logged < 2)
                 {
                     _logged++;
-                    QLog.Warn("角标诊断：取状态失败 —— " + e.GetType().Name + " " + e.Message);
+                    QLog.Warn("荧光莓角标：取状态失败 —— " + e.GetType().Name + " " + e.Message);
                 }
 
                 return;
@@ -316,14 +313,6 @@ namespace QoL
                 {
                     return;
                 }
-            }
-
-            if (_diagBerryHits < 3)
-            {
-                _diagBerryHits++;
-                QLog.Info("荧光莓角标：识别到荧光莓 id=" + (element.identifier ?? "null")
-                          + " grade=" + DisplayGrade(element)
-                          + " style=" + TextStyle);
             }
 
             Track(element);
