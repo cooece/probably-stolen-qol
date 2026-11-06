@@ -31,6 +31,9 @@ namespace QoL
         // 主动型工具用完电池后，先让它在槽里显示一会儿再还，避免「空槽却产出物品」
         private const float ReturnDelay = 1.5f;
         private const int MaxClosureDepth = 3;
+        // 低于这个电量的电池干不了活：小号水瓶打印要 4 点，其余机器一次耗电也不低于这个量级。
+        // 用它区分「还有电」和「还剩点零头、根本用不了」。
+        private const int MinUsableEnergy = 4;
 
         internal const string Off = "关闭";
         internal const string MorningOnly = "只早晨换";
@@ -285,26 +288,42 @@ namespace QoL
                 // 记下来，早晨统一检查时不给它装常驻电池。
                 ButtonDriven.Add(machine.uniqueId);
 
-                // 严格只在空槽时装填：玩家自己放进去的电池一律不碰、也不取回。
-                if (slot.childItem != null) return;
+                List<GameItem> cells = CollectCells(AllItems());
+                GameItem cur = slot.childItem;
+
+                // 还有电的电池是玩家自己放的，一律不碰、也不取回；
+                // 只在空槽、或者槽里那块只剩零头干不动时动手。
+                if (cur != null && Energy(cur) >= MinUsableEnergy) return;
                 if (!CanOperate()) return;
 
-                List<GameItem> all = AllItems();
-                List<GameItem> cells = CollectCells(all);
                 GameItem best = null;
                 for (int i = 0; i < cells.Count; i++)
                 {
                     GameItem c = cells[i];
-                    if (c != null && Energy(c) > 0 && PowerHelper.CanDrawPowerSource(c, 1))
+                    if (c != null && Energy(c) >= MinUsableEnergy)
                     {
                         best = c;
                         break; // cells 已按能量降序，第一块就是最满的
                     }
                 }
-                if (best == null) return;
+
+                // 按下去却找不出任何一块干得动的电池：弹提示，别让人对着没反应的按钮发呆。
+                if (best == null)
+                {
+                    NotifyEmpty();
+                    return;
+                }
 
                 GameInventory from = best.parentInventory;
-                if (!Install(slot, best)) return;
+                if (cur != null)
+                {
+                    // 槽里那块已经干不动：直接换成有电的，旧的落回新电池原位（充电器就自动回充）
+                    if (!SwapOrInstall(slot, cur, best)) return;
+                }
+                else if (!Install(slot, best))
+                {
+                    return;
+                }
 
                 // 先留在槽里展示一会儿，让玩家看得到「有电池、电量掉了」，再自动还回去
                 Pending[machine.uniqueId] = new PendingReturn
@@ -427,24 +446,22 @@ namespace QoL
             bool show = false;
             if (Enabled)
             {
-                // 只按「有没有一块还有电的普通电池」判断，不区分它在哪：
+                // 只按「有没有一块还干得动的普通电池」判断，不区分它在哪：
                 // 电池用光时往往都还留在各自机器的电池槽里，按可搬取候选来统计会漏判。
+                // 剩几点零头也算「用完」，否则机器按下去毫无反应却一直不提示。
                 List<GameItem> all = AllItems();
-                int owned = 0;
                 bool anyUsable = false;
                 for (int i = 0; i < all.Count; i++)
                 {
                     GameItem c = all[i];
-                    if (!IsNormalCell(c)) continue;
-                    owned++;
-                    if (Energy(c) > 0)
+                    if (IsNormalCell(c) && Energy(c) >= MinUsableEnergy)
                     {
                         anyUsable = true;
                         break;
                     }
                 }
-                // 有普通电池、但一块还有电的都没有 → 提示；一块电池都没有（新档）时不打扰
-                show = owned > 0 && !anyUsable;
+                // 有普通电池、但一块都干不动活 → 提示；一块电池都没有（新档）时不打扰
+                show = !anyUsable && HasNormalCell(all);
             }
 
             if (show == _hintShown) return;
@@ -468,6 +485,16 @@ namespace QoL
                 QLog.Warn("自动换电池：状态提示失败 —— " + e.Message);
                 return false;
             }
+        }
+
+        /// <summary>店里还有没有普通电池（不管有没有电）。</summary>
+        private static bool HasNormalCell(List<GameItem> all)
+        {
+            for (int i = 0; i < all.Count; i++)
+            {
+                if (IsNormalCell(all[i])) return true;
+            }
+            return false;
         }
 
         internal static void Tick(float dt)
@@ -741,8 +768,17 @@ namespace QoL
 
         private static List<GameItem> AllItems()
         {
-            PlayerStore store = PlayerStore.Instance;
-            return store != null ? store.FindAllItem(true) : new List<GameItem>();
+            try
+            {
+                PlayerStore store = PlayerStore.Instance;
+                return store != null ? store.FindAllItem(true) : new List<GameItem>();
+            }
+            catch
+            {
+                // 主菜单 / 读档阶段 PlayerStore.Instance 会现造对象并抛空引用，
+                // 异常会一路冒到 QoLUpdate，把同一帧后面的功能全跳过，这里直接吃掉。
+                return new List<GameItem>();
+            }
         }
 
         private static bool CanOperate()
