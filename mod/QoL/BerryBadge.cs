@@ -11,10 +11,9 @@ namespace QoL
     /// <summary>
     /// 荧光莓品质角标（纯文字版）。
     ///
-    /// 做法：在物品图标右上角挂一个彩色小底块 + 一个黑字。
-    ///   · 底块是运行时的 Image（白色 quad 染色），半透明，不把图标糊死；
-    ///   · 文字是游戏自己的 TMP 文本节点，字体从同元素的「堆叠数量」节点借，
-    ///     所以和游戏字体完全一致，7 号字也清晰；
+    /// 外观：图标右上角一个彩色小底块（9×9、50% 透明）+ 一个 7 号黑字。
+    ///   · 底块是运行时 Image（白 quad 染色），文字是游戏自己的 TMP 节点，
+    ///     字体从同元素的「堆叠数量」节点借，所以和游戏字体一致；
     ///   · 位置用锚点钉在图标右上角，图标多大都不会飘。
     ///
     /// 字有三种写法，底块颜色固定四档：
@@ -23,8 +22,10 @@ namespace QoL
     ///   差 +0  灰   文字=丙   优良中差=中   ABCD=C
     ///   霉 -1  红   文字=丁   优良中差=差   ABCD=D
     ///
-    /// 触发点是 Harmony 挂的 <c>GameItemElement.HandleInnateModSprite</c> 前缀：
-    /// 格子每次刷新前都会走到，这时候更新角标最稳。
+    /// 性能上有三条纪律，都是踩过坑换来的：
+    ///   1. 不重复登记元素（否则列表无限膨胀，加载直接卡死）；
+    ///   2. 每帧的前缀里只做纯判定，不碰 UI（写 TMP 文本会触发重新排版，很贵）；
+    ///   3. 等级和样式都没变就直接返回，一个字都不写。
     /// </summary>
     internal static class BerryBadge
     {
@@ -42,37 +43,8 @@ namespace QoL
         private const string GradeWordChoice = "优良中差";   // 优 良 中 差
         private const string AbcdChoice = "ABCD";           // A B C D
 
-        private static Harmony _harmony;
-        private static QoLSettings _settings;
-
-        private static bool Enabled => _settings == null || _settings.BerryBadge.Value;
-
-        /// <summary>免鉴定：开启时直接读 condition，关闭时只认放大镜鉴定过的。</summary>
-        private static bool WithoutMagnifier => _settings == null || _settings.BerrySkipMagnifier.Value;
-
-        /// <summary>当前字样式。存的值不认识（比如旧配置里的贴图模式）时按「文字」处理。</summary>
-        private static string TextStyle
-        {
-            get
-            {
-                string v = _settings != null ? _settings.BerryDisplayMode.Value : null;
-
-                if (v == GradeWordChoice)
-                {
-                    return GradeWordChoice;
-                }
-
-                if (v == AbcdChoice)
-                {
-                    return AbcdChoice;
-                }
-
-                return JiaYiChoice;
-            }
-        }
-
         // ------------------------------------------------------------------
-        // 角标外观参数。改这几个就够了。
+        // 外观参数。要调就调这几个。
         // ------------------------------------------------------------------
 
         /// <summary>字号。7 号在 32px 的图标上只占五分之一高，不挡果实。</summary>
@@ -89,6 +61,81 @@ namespace QoL
 
         /// <summary>字用近黑色，压在彩色底上对比最强。</summary>
         private static readonly Color TextColor = new Color32(26, 27, 34, 255);
+
+        // ------------------------------------------------------------------
+        // 四种等级的文案与配色。下标就是等级，1=差 2=普通 3=优 4=发霉。
+        // 用静态数组而不是 switch，避免每次刷新都走分支、也不需要临时字符串。
+        // ------------------------------------------------------------------
+
+        private static readonly string[] JiaYiText = { string.Empty, "丙", "乙", "甲", "丁" };
+        private static readonly string[] GradeWordText = { string.Empty, "中", "良", "优", "差" };
+        private static readonly string[] AbcdText = { string.Empty, "C", "B", "A", "D" };
+
+        private static readonly Color[] GradeColors =
+        {
+            new Color32(0, 0, 0, 0),                            // 0 占位
+            new Color32(176, 180, 190, ChipAlpha),              // 1 灰 差
+            new Color32(240, 196, 71, ChipAlpha),               // 2 黄 普通
+            new Color32(79, 209, 122, ChipAlpha),               // 3 绿 优
+            new Color32(230, 75, 75, ChipAlpha),                // 4 红 发霉
+        };
+
+        private static Harmony _harmony;
+        private static QoLSettings _settings;
+
+        private static bool Enabled => _settings == null || _settings.BerryBadge.Value;
+
+        /// <summary>免鉴定：开启时直接读 condition，关闭时只认放大镜鉴定过的。</summary>
+        private static bool WithoutMagnifier => _settings == null || _settings.BerrySkipMagnifier.Value;
+
+        /// <summary>当前字样式。存的值不认识（比如旧配置里的贴图模式）时按「文字」处理。</summary>
+        private static string TextStyle
+        {
+            get
+            {
+                if (_settings == null)
+                {
+                    return JiaYiChoice;
+                }
+
+                string v = _settings.BerryDisplayMode.Value;
+
+                return v == GradeWordChoice || v == AbcdChoice ? v : JiaYiChoice;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        // 每个元素的状态。查一次表就能拿到，后续都是 O(1)。
+        // ------------------------------------------------------------------
+
+        private sealed class ElementState
+        {
+            /// <summary>是不是荧光莓。物品不会变身份，判定一次就够。</summary>
+            internal bool IsBerry;
+
+            /// <summary>角标节点。第一次需要显示时才创建，没有角标的元素不占这层开销。</summary>
+            internal TMP_Text Text;
+            internal Image Background;
+
+            /// <summary>当前显示中的等级，0 表示没显示。用来判断要不要重写文本。</summary>
+            internal int ShownGrade;
+
+            /// <summary>当前显示用的字样式，样式切换时要重写。</summary>
+            internal string ShownStyle;
+        }
+
+        private static readonly ConditionalWeakTable<GameItemElement, ElementState> States =
+            new ConditionalWeakTable<GameItemElement, ElementState>();
+
+        /// <summary>见过的荧光莓元素，改设置时用来重画。</summary>
+        private static readonly List<WeakReference<GameItemElement>> Tracked =
+            new List<WeakReference<GameItemElement>>();
+
+        /// <summary>堆叠数量节点（私有字段），借它的字体和材质。</summary>
+        private static readonly System.Reflection.FieldInfo StackCountField =
+            AccessTools.Field(typeof(GameItemElement), "stackCountText");
+
+        private static int _logged;
 
         // ------------------------------------------------------------------
         // 注册
@@ -164,16 +211,14 @@ namespace QoL
 
             foreach (WeakReference<GameItemElement> weak in Tracked)
             {
-                if (weak.TryGetTarget(out GameItemElement element) && element != null)
+                if (!weak.TryGetTarget(out GameItemElement element) || element == null)
                 {
-                    try
-                    {
-                        element.HandleInnateModSprite();
-                    }
-                    catch
-                    {
-                        // 元素已销毁，忽略
-                    }
+                    continue;
+                }
+
+                if (States.TryGetValue(element, out ElementState state))
+                {
+                    Hide(state);
                 }
             }
 
@@ -214,24 +259,135 @@ namespace QoL
         }
 
         // ------------------------------------------------------------------
-        // 判定
+        // 每帧入口：只做判定，不碰 UI
         // ------------------------------------------------------------------
 
-        private static void BeforeRender(GameItemElement __instance)
+        private static void BeforeRender(GameItemElement element)
         {
-            if (__instance == null)
+            if (element == null)
             {
                 return;
             }
 
-            Track(__instance);
-            UpdateText(__instance);
+            ElementState state;
 
-            // 轻量统计：每 5000 次刷新打一行，用来判断是不是调用量异常
-            _calls++;
-            if (_calls % 5000 == 0)
+            try
             {
-                QLog.Info("荧光莓角标：刷新 " + _calls + " 次，已登记 " + Tracked.Count + " 个元素");
+                state = States.GetValue(element, e => new ElementState { IsBerry = IsBerry(e) });
+            }
+            catch
+            {
+                return;
+            }
+
+            // 绝大多数格子不是荧光莓，第一道门就把它们挡住了
+            if (!state.IsBerry)
+            {
+                return;
+            }
+
+            Track(element);
+
+            if (!Enabled)
+            {
+                Hide(state);
+                return;
+            }
+
+            int grade = DisplayGrade(element);
+            string style = TextStyle;
+
+            // 等级和写法都没变：这次什么都不用动（不写文本、不碰材质）
+            if (grade == state.ShownGrade && style == state.ShownStyle)
+            {
+                return;
+            }
+
+            try
+            {
+                Apply(state, element, grade, style);
+            }
+            catch (Exception e)
+            {
+                if (_logged < 4)
+                {
+                    _logged++;
+                    QLog.Warn("荧光莓角标：更新失败 —— " + e.GetType().Name + " " + e.Message);
+                }
+            }
+        }
+
+        private static void Track(GameItemElement element)
+        {
+            // 已经登记过就直接返回（绝大多数调用的实际路径）
+            if (AlreadyTracked(element))
+            {
+                return;
+            }
+
+            // 只在列表增长到一定量时才清理
+            if (Tracked.Count >= 256)
+            {
+                for (int i = Tracked.Count - 1; i >= 0; i--)
+                {
+                    if (!Tracked[i].TryGetTarget(out _))
+                    {
+                        Tracked.RemoveAt(i);
+                    }
+                }
+
+                // 元素本来就多的话，丢掉最老的一半，防止无限增长
+                if (Tracked.Count >= 512)
+                {
+                    Tracked.RemoveRange(0, Tracked.Count / 2);
+                }
+            }
+
+            Tracked.Add(new WeakReference<GameItemElement>(element));
+        }
+
+        private static readonly ConditionalWeakTable<GameItemElement, object> TrackedSet =
+            new ConditionalWeakTable<GameItemElement, object>();
+
+        private static readonly object TrackedMarker = new object();
+
+        private static bool AlreadyTracked(GameItemElement element)
+        {
+            if (TrackedSet.TryGetValue(element, out _))
+            {
+                return true;
+            }
+
+            TrackedSet.Add(element, TrackedMarker);
+            return false;
+        }
+
+        internal static void RefreshDisplayed()
+        {
+            WeakReference<GameItemElement>[] snapshot = Tracked.ToArray();
+
+            for (int i = 0; i < snapshot.Length; i++)
+            {
+                if (!snapshot[i].TryGetTarget(out GameItemElement element) || element == null)
+                {
+                    continue;
+                }
+
+                if (States.TryGetValue(element, out ElementState state))
+                {
+                    // 清掉缓存，下次渲染时按新样式重画
+                    state.ShownGrade = -1;
+                    state.ShownStyle = null;
+                }
+
+                try
+                {
+                    element.HandleInnateModSprite();
+                }
+                catch
+                {
+                    // 元素已销毁
+                }
             }
         }
 
@@ -246,13 +402,17 @@ namespace QoL
 
                 int grade = Classify(gameItem.GetTagReadonly(CondKey).GetInt());
 
-                gameItem.ModifyTag(GradeTag, state => state.Enable().SetInt(grade), false);
+                gameItem.ModifyTag(GradeTag, tagState => tagState.Enable().SetInt(grade), false);
             }
             catch
             {
                 // 鉴定钩子失败不影响鉴定本身
             }
         }
+
+        // ------------------------------------------------------------------
+        // 判定
+        // ------------------------------------------------------------------
 
         internal static bool IsBerry(GameItem item)
         {
@@ -344,157 +504,78 @@ namespace QoL
         }
 
         // ------------------------------------------------------------------
-        // 角标本体
+        // 真正动手：只在等级或样式变化时才会走到
         // ------------------------------------------------------------------
 
-        private sealed class Badge
+        private static void Apply(ElementState state, GameItemElement element, int grade, string style)
         {
-            internal TMP_Text Text;
-            internal Image Background;
-        }
-
-        private static readonly ConditionalWeakTable<GameItemElement, Badge> Badges =
-            new ConditionalWeakTable<GameItemElement, Badge>();
-
-        /// <summary>见过的元素，用于改设置后立刻重画。</summary>
-        private static readonly List<WeakReference<GameItemElement>> Tracked =
-            new List<WeakReference<GameItemElement>>();
-
-        /// <summary>堆叠数量节点（私有字段），借它的字体和材质。</summary>
-        private static readonly System.Reflection.FieldInfo StackCountField =
-            AccessTools.Field(typeof(GameItemElement), "stackCountText");
-
-        private static int _logged;
-        private static int _calls;
-
-        /// <summary>已经登记过的元素，避免同一格子被反复加进 Tracked。</summary>
-        private static readonly ConditionalWeakTable<GameItemElement, object> Seen =
-            new ConditionalWeakTable<GameItemElement, object>();
-
-        private static readonly object SeenMarker = new object();
-
-        /// <summary>
-        /// 把元素登记下来，改设置时好让它重画。
-        ///
-        /// 注意：这里必须去重。HandleInnateModSprite 每次刷新都会调用，
-        /// 一个格子一局会刷新上千次，不去重列表就会无限膨胀，
-        /// 再加上每次登记都要扫一遍全表，很快就会把加载卡死。
-        /// </summary>
-        private static void Track(GameItemElement element)
-        {
-            if (Seen.TryGetValue(element, out _))
+            if (!IsGrade(grade))
             {
+                Hide(state);
                 return;
             }
 
-            Seen.Add(element, SeenMarker);
-
-            // 只在列表变大到一定程度时清理一次死引用，平时都是 O(1)
-            if (Tracked.Count >= 256)
+            if (state.Text == null || state.Background == null)
             {
-                for (int i = Tracked.Count - 1; i >= 0; i--)
-                {
-                    if (!Tracked[i].TryGetTarget(out _))
-                    {
-                        Tracked.RemoveAt(i);
-                    }
-                }
-
-                if (Tracked.Count >= 512)
-                {
-                    // 还这么多说明元素确实多，丢掉一半最老的，防止无限增长
-                    Tracked.RemoveRange(0, Tracked.Count / 2);
-                }
-            }
-
-            Tracked.Add(new WeakReference<GameItemElement>(element));
-        }
-
-        internal static void RefreshDisplayed()
-        {
-            WeakReference<GameItemElement>[] snapshot = Tracked.ToArray();
-
-            for (int i = 0; i < snapshot.Length; i++)
-            {
-                if (!snapshot[i].TryGetTarget(out GameItemElement element) || element == null)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    element.HandleInnateModSprite();
-                }
-                catch
-                {
-                    // 元素已销毁
-                }
-            }
-        }
-
-        private static void UpdateText(GameItemElement element)
-        {
-            try
-            {
-                UpdateTextCore(element);
-            }
-            catch (Exception e)
-            {
-                if (_logged < 4)
-                {
-                    _logged++;
-                    QLog.Warn("荧光莓角标：更新失败 —— " + e.GetType().Name + " " + e.Message);
-                }
-            }
-        }
-
-        private static void UpdateTextCore(GameItemElement element)
-        {
-            bool berry = IsBerry(element);
-            int grade = berry ? DisplayGrade(element) : 0;
-            bool show = Enabled && IsGrade(grade);
-
-            Badges.TryGetValue(element, out Badge badge);
-
-            if (!show)
-            {
-                // 不是荧光莓、或者关掉功能时，把之前留下的角标藏起来
-                if (badge != null)
-                {
-                    if (badge.Text != null)
-                    {
-                        badge.Text.text = string.Empty;
-                        badge.Text.enabled = false;
-                    }
-
-                    if (badge.Background != null)
-                    {
-                        badge.Background.enabled = false;
-                    }
-                }
-
-                return;
-            }
-
-            if (badge == null || badge.Text == null || badge.Background == null)
-            {
-                Badges.Remove(element);
-                badge = Create(element);
-                if (badge == null)
+                if (!Create(state, element))
                 {
                     return;
                 }
             }
 
-            badge.Background.enabled = true;
-            badge.Background.color = GradeColor(grade);
+            state.Background.enabled = true;
+            state.Background.color = GradeColors[grade];
 
-            badge.Text.enabled = true;
-            badge.Text.text = GradeText(grade);
-            badge.Text.color = TextColor;
+            state.Text.enabled = true;
+            state.Text.text = TextFor(grade, style);
+            state.Text.color = TextColor;
+
+            state.ShownGrade = grade;
+            state.ShownStyle = style;
         }
 
-        private static Badge Create(GameItemElement element)
+        /// <summary>收起来。已经收着就直接返回，避免每帧写空字符串触发 TMP 重排。</summary>
+        private static void Hide(ElementState state)
+        {
+            // 还没建过节点，或者已经收起来了：什么都不用做
+            if (state.Text == null && state.Background == null)
+            {
+                state.ShownGrade = 0;
+                return;
+            }
+
+            if (state.ShownGrade == 0 && state.Text != null && !state.Text.enabled)
+            {
+                return;
+            }
+
+            if (state.Text != null)
+            {
+                state.Text.enabled = false;
+                state.Text.text = string.Empty;
+            }
+
+            if (state.Background != null)
+            {
+                state.Background.enabled = false;
+            }
+
+            state.ShownGrade = 0;
+            state.ShownStyle = null;
+        }
+
+        private static string TextFor(int grade, string style)
+        {
+            if (style == GradeWordChoice)
+            {
+                return GradeWordText[grade];
+            }
+
+            return style == AbcdChoice ? AbcdText[grade] : JiaYiText[grade];
+        }
+
+        /// <summary>建节点。每个元素只做一次，之后都走 Apply 改属性。</summary>
+        private static bool Create(ElementState state, GameItemElement element)
         {
             TreeNodeRender middle = element.middle;
             if (middle == null || middle.rectTransform == null)
@@ -505,7 +586,7 @@ namespace QoL
                     QLog.Warn("荧光莓角标：middle 为空，建不了角标");
                 }
 
-                return null;
+                return false;
             }
 
             TreeNodeRender template = null;
@@ -518,7 +599,6 @@ namespace QoL
                 // 拿不到模板就用默认字体
             }
 
-            // 1) 底色块：白色 quad 染色，钉在图标右上角
             RectTransform chip;
             Image background;
 
@@ -546,10 +626,9 @@ namespace QoL
                     QLog.Warn("荧光莓角标：底色块创建失败 —— " + e.GetType().Name + " " + e.Message);
                 }
 
-                return null;
+                return false;
             }
 
-            // 2) 文字：挂在底色块里铺满，居中
             TMP_Text txt = null;
             RectTransform rect = null;
 
@@ -589,7 +668,7 @@ namespace QoL
                         QLog.Warn("荧光莓角标：自建文本失败 —— " + e.GetType().Name + " " + e.Message);
                     }
 
-                    return null;
+                    return false;
                 }
             }
 
@@ -617,8 +696,8 @@ namespace QoL
             txt.raycastTarget = false;
             txt.outlineWidth = 0f;
 
-            var result = new Badge { Text = txt, Background = background };
-            Badges.Add(element, result);
+            state.Text = txt;
+            state.Background = background;
 
             if (_logged < 1)
             {
@@ -631,54 +710,7 @@ namespace QoL
                           + "，字号 " + TextSize + "，块 " + ChipSize.x + "x" + ChipSize.y);
             }
 
-            return result;
-        }
-
-        private static string GradeText(int grade)
-        {
-            string style = TextStyle;
-
-            if (style == GradeWordChoice)
-            {
-                switch (grade)
-                {
-                    case 3: return "优";
-                    case 2: return "良";
-                    case 1: return "中";
-                    default: return "差";
-                }
-            }
-
-            if (style == AbcdChoice)
-            {
-                switch (grade)
-                {
-                    case 3: return "A";
-                    case 2: return "B";
-                    case 1: return "C";
-                    default: return "D";
-                }
-            }
-
-            switch (grade)
-            {
-                case 3: return "甲";
-                case 2: return "乙";
-                case 1: return "丙";
-                default: return "丁";
-            }
-        }
-
-        /// <summary>底色：绿(优) 黄(普通) 灰(差) 红(发霉)，统一 50% 透明。</summary>
-        private static Color GradeColor(int grade)
-        {
-            switch (grade)
-            {
-                case 1: return new Color32(176, 180, 190, ChipAlpha);   // 灰
-                case 2: return new Color32(240, 196, 71, ChipAlpha);    // 黄
-                case 3: return new Color32(79, 209, 122, ChipAlpha);    // 绿
-                default: return new Color32(230, 75, 75, ChipAlpha);    // 红
-            }
+            return true;
         }
     }
 }
