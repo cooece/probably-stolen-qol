@@ -4,6 +4,7 @@ using System.Runtime.CompilerServices;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace QoL
 {
@@ -208,17 +209,17 @@ namespace QoL
         }
 
         // ------------------------------------------------------------------
-        // 真文字模式：用游戏自己的文本节点
+        // 真文字模式：一块底色 + 一个黑字
         //
-        // 图标上本来就有一块文字——堆叠数量的 "x5"，类型是 TextMeshProUGUI。
-        // 所以「在图标上写字」不需要烘焙像素，建一个同样的文本节点就行，
-        // 而且字体直接从那个节点借，保证和游戏完全一致。
+        // 底图是普通的 Image（白色 quad 染色），文字是游戏自己的文本节点，
+        // 字体从图标的堆叠数量节点借，所以和游戏完全一致。
         // ------------------------------------------------------------------
 
         private sealed class TextRef
         {
             internal TMP_Text Text;
             internal RectTransform Rect;
+            internal Image Background;
         }
 
         private static readonly ConditionalWeakTable<GameItemElement, TextRef> TextNodes =
@@ -228,15 +229,16 @@ namespace QoL
         private static readonly System.Reflection.FieldInfo StackCountField =
             AccessTools.Field(typeof(GameItemElement), "stackCountText");
 
-        /// <summary>字号。9 号在 32px 的图标上刚好占下半边多一点。</summary>
-        private const float TextSize = 9f;
+        /// <summary>字号。8 号在 32px 的图标上只占四分之一高，不挡果实。</summary>
+        private const float TextSize = 8f;
 
-        /// <summary>距图标右上角的内缩量（像素）。横竖各留 1，字正好压在角上。</summary>
-        private static readonly Vector2 TextInset = new Vector2(1f, 1f);
+        /// <summary>底色块尺寸（像素）。比一个汉字略大，留 1px 边。</summary>
+        private static readonly Vector2 ChipSize = new Vector2(10f, 10f);
+
+        /// <summary>底色块距图标右上角的内缩。</summary>
+        private static readonly Vector2 ChipInset = new Vector2(1f, 1f);
 
         private static int _textLogged;
-        private static bool _textEntered;
-        private static bool _showSkipped;
 
         private static void UpdateText(GameItemElement element)
         {
@@ -269,27 +271,22 @@ namespace QoL
 
             if (!show)
             {
-                // 切回其它模式时，把之前留下的字清掉
-                if (reference != null && reference.Text != null)
+                // 切回其它模式时，把之前留下的角标关掉
+                if (reference != null)
                 {
-                    reference.Text.text = string.Empty;
-                    reference.Text.enabled = false;
-                }
+                    if (reference.Text != null)
+                    {
+                        reference.Text.text = string.Empty;
+                        reference.Text.enabled = false;
+                    }
 
-                if (ShowText && !_showSkipped)
-                {
-                    _showSkipped = true;
-                    QLog.Info("荧光莓文字：跳过（Enabled=" + Enabled + " IsBerry=" + berry
-                              + " grade=" + grade + "）");
+                    if (reference.Background != null)
+                    {
+                        reference.Background.enabled = false;
+                    }
                 }
 
                 return;
-            }
-
-            if (!_textEntered)
-            {
-                _textEntered = true;
-                QLog.Info("荧光莓文字：进入更新，middle=" + (element.middle != null));
             }
 
             if (reference == null || reference.Text == null || reference.Rect == null)
@@ -302,10 +299,19 @@ namespace QoL
                 }
             }
 
+            if (reference.Background != null)
+            {
+                reference.Background.enabled = true;
+                reference.Background.color = GradeColor(grade);
+            }
+
             reference.Text.enabled = true;
             reference.Text.text = GradeText(grade);
-            reference.Text.color = GradeColor(grade);
+            reference.Text.color = TextColor;
         }
+
+        /// <summary>字用近黑色，压在彩色底上对比最强。</summary>
+        private static readonly Color TextColor = new Color32(26, 27, 34, 255);
 
         private static TextRef Create(GameItemElement element)
         {
@@ -315,7 +321,7 @@ namespace QoL
                 if (_textLogged < 6)
                 {
                     _textLogged++;
-                    QLog.Warn("荧光莓文字：middle 为空，建不了文本节点");
+                    QLog.Warn("荧光莓文字：middle 为空，建不了角标");
                 }
 
                 return null;
@@ -331,21 +337,49 @@ namespace QoL
                 // 拿不到模板就用默认字体
             }
 
+            // 1) 底色块：白色 quad 染色，钉在图标右上角
+            RectTransform chip;
+            Image bg;
+
+            try
+            {
+                var go = new GameObject("QoL Berry Chip", typeof(RectTransform));
+                chip = go.GetComponent<RectTransform>();
+                chip.SetParent(middle.rectTransform, false);
+
+                bg = go.AddComponent<Image>();
+                bg.raycastTarget = false;
+                bg.sprite = null;
+
+                chip.anchorMin = new Vector2(1f, 1f);
+                chip.anchorMax = new Vector2(1f, 1f);
+                chip.pivot = new Vector2(1f, 1f);
+                chip.sizeDelta = ChipSize;
+                chip.anchoredPosition = new Vector2(-ChipInset.x, -ChipInset.y);
+            }
+            catch (Exception e)
+            {
+                if (_textLogged < 6)
+                {
+                    _textLogged++;
+                    QLog.Warn("荧光莓文字：底色块创建失败 —— " + e.GetType().Name + " " + e.Message);
+                }
+
+                return null;
+            }
+
+            // 2) 文字：挂在底色块里，铺满它，居中
             TMP_Text txt = null;
             RectTransform rect = null;
 
-            // 首选：游戏自己的文字节点工厂
             try
             {
                 TreeNodeRender node = TreeNodeRender.InstantiateText();
-                if (node != null)
+                if (node != null && node.text != null)
                 {
-                    node.SetParent(middle);
-                    if (node.text != null)
-                    {
-                        txt = node.text;
-                        rect = node.rectTransform;
-                    }
+                    rect = node.rectTransform;
+                    rect.SetParent(chip, false);
+                    txt = node.text;
                 }
             }
             catch (Exception e)
@@ -357,14 +391,13 @@ namespace QoL
                 }
             }
 
-            // 兜底：自己建一个 TMP 文本
             if (txt == null)
             {
                 try
                 {
                     var go = new GameObject("QoL Berry Grade", typeof(RectTransform));
                     rect = go.GetComponent<RectTransform>();
-                    rect.SetParent(middle.rectTransform, false);
+                    rect.SetParent(chip, false);
                     txt = go.AddComponent<TextMeshProUGUI>();
                 }
                 catch (Exception e)
@@ -388,24 +421,20 @@ namespace QoL
                 }
                 catch
                 {
-                    // 字体借不到就先这样，至少字能出来
+                    // 借不到就先这样，至少字能出来
                 }
             }
 
-            // 用锚点钉在父节点的右上角，而不是靠中心偏移去凑——
-            // 图标多大、外层怎么缩放，字都稳稳待在右上角，不会浮到果实上方。
-            rect.anchorMin = new Vector2(1f, 1f);
-            rect.anchorMax = new Vector2(1f, 1f);
-            rect.pivot = new Vector2(1f, 1f);
-            rect.sizeDelta = new Vector2(26f, 12f);
-            rect.anchoredPosition = new Vector2(-TextInset.x, -TextInset.y);
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
 
-            txt.alignment = TextAlignmentOptions.TopRight;
+            txt.alignment = TextAlignmentOptions.Center;
             txt.fontStyle = FontStyles.Bold;
             txt.fontSize = TextSize;
             txt.raycastTarget = false;
-            txt.outlineWidth = 0.25f;
-            txt.outlineColor = new Color32(36, 35, 53, 255);
+            txt.outlineWidth = 0f;
 
             if (_textLogged < 6)
             {
@@ -415,10 +444,10 @@ namespace QoL
                     : Vector2.zero;
                 QLog.Info("荧光莓文字：已创建，图标 " + icon.x + "x" + icon.y
                           + "，字体 " + (txt.font != null ? txt.font.name : "无")
-                          + "，字号 " + TextSize + "，内缩 " + TextInset.x + "," + TextInset.y);
+                          + "，字号 " + TextSize + "，块 " + ChipSize.x + "x" + ChipSize.y);
             }
 
-            var result = new TextRef { Text = txt, Rect = rect };
+            var result = new TextRef { Text = txt, Rect = rect, Background = bg };
             TextNodes.Add(element, result);
             return result;
         }
@@ -434,14 +463,15 @@ namespace QoL
             }
         }
 
+        /// <summary>底色：绿(甲/优) 黄(乙/普通) 灰(丙/差) 红(丁/发霉)。</summary>
         private static Color GradeColor(int grade)
         {
             switch (grade)
             {
-                case 1: return new Color32(196, 138, 245, 255);   // 丙 紫
+                case 1: return new Color32(176, 180, 190, 255);   // 丙 灰
                 case 2: return new Color32(240, 196, 71, 255);    // 乙 黄
                 case 3: return new Color32(79, 209, 122, 255);    // 甲 绿
-                default: return new Color32(235, 96, 96, 255);    // 丁 红
+                default: return new Color32(230, 75, 75, 255);    // 丁 红
             }
         }
 
