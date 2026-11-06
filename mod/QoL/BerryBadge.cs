@@ -481,9 +481,19 @@ namespace QoL
 
         internal static bool IsBerry(GameItem item)
         {
-            return item != null
-                && item.identifier == BerryId
-                && item.IsTag(BerryTag);
+            if (item == null || item.identifier != BerryId)
+            {
+                return false;
+            }
+
+            try
+            {
+                return item.IsTag(BerryTag);
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static void Attach(GameItem item)
@@ -560,7 +570,22 @@ namespace QoL
         /// <summary>等级：1=差(紫) 2=普通(黄) 3=优(绿) 4=发霉(红)。0 表示不显示。</summary>
         private static int DisplayGrade(GameItem item)
         {
-            TagSystem state = item.modifiedState;
+            TagSystem state = null;
+
+            try
+            {
+                state = item.modifiedState;
+            }
+            catch
+            {
+                return 0;
+            }
+
+            // 有些元素（预览、假节点）没有状态，直接不给角标，别让它抛异常连累整帧
+            if (state == null || state.dict == null)
+            {
+                return 0;
+            }
 
             if (WithoutMagnifier)
             {
