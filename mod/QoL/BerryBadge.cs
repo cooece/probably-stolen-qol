@@ -127,6 +127,14 @@ namespace QoL
         private static readonly ConditionalWeakTable<GameItemElement, ElementState> States =
             new ConditionalWeakTable<GameItemElement, ElementState>();
 
+        /// <summary>
+        /// 首次见到某个元素时用来建状态的委托。
+        /// 必须存成静态字段——写成 lambda 直接传进去的话，每次调用都会新建一个委托对象，
+        /// 而 HandleInnateModSprite 一秒能调用几千次，白白给 GC 增加压力。
+        /// </summary>
+        private static readonly ConditionalWeakTable<GameItemElement, ElementState>.CreateValueCallback CreateState =
+            e => new ElementState { IsBerry = IsBerry(e) };
+
         /// <summary>见过的荧光莓元素，改设置时用来重画。</summary>
         private static readonly List<WeakReference<GameItemElement>> Tracked =
             new List<WeakReference<GameItemElement>>();
@@ -262,8 +270,14 @@ namespace QoL
         // 每帧入口：只做判定，不碰 UI
         // ------------------------------------------------------------------
 
-        private static void BeforeRender(GameItemElement element)
+        /// <summary>
+        /// 注意参数必须叫 __instance：这是 Harmony 保留的参数名，改成别的名字会注入失败，
+        /// 表现为整个功能静默不生效（日志里报 Parameter "xxx" not found）。
+        /// </summary>
+        private static void BeforeRender(GameItemElement __instance)
         {
+            GameItemElement element = __instance;
+
             if (element == null)
             {
                 return;
@@ -273,7 +287,7 @@ namespace QoL
 
             try
             {
-                state = States.GetValue(element, e => new ElementState { IsBerry = IsBerry(e) });
+                state = States.GetValue(element, CreateState);
             }
             catch
             {
