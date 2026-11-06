@@ -18,7 +18,7 @@
   <ID>local.qol</ID>
   <Name>深空当铺 · 便利整合（QoL Bundle）</Name>
   <Author>cooece</Author>
-  <ModVersion>1.0.0</ModVersion>
+  <ModVersion>1.0.1</ModVersion>
   <GameVersions>
     <Version>0.46D</Version>
   </GameVersions>
@@ -36,5 +36,6 @@ A one-stop quality-of-life bundle: price trends, auto-authentication, cash and r
   </Assemblies>
   <Capabilities>
     <Capability>files</Capability>
+    <Capability>reflection-external</Capability>
   </Capabilities>
 </Mod>
