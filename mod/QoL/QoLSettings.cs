@@ -84,6 +84,9 @@ namespace QoL
         /// <summary>荧光莓角标：一个下拉同时管开关与呈现方式（含「关闭」）。</summary>
         internal ConfigEntry<string> BerryDisplayMode { get; }
 
+        /// <summary>全自动换电：一个下拉同时管开关、时机与提前量。</summary>
+        internal ConfigEntry<string> AutoBatterySwapMode { get; }
+
         internal int Count => _config.Entries.Count;
 
         internal string FilePath => _config.FilePath;
@@ -257,6 +260,17 @@ namespace QoL
                 () => "角标呈现方式",
                 new[] { BadgeModeJiaYi, BadgeModeGrade, BadgeModeAbcd, BadgeModeOff },
                 () => "默认开启。荧光莓图标右上角显示品质角标，不用放大镜：甲乙丙丁＝甲最好、丁发霉；优良中差更直白；ABCD 是字母序号。选关闭则不显示。");
+
+            // ---------------- 电力 ----------------
+            // 一个功能只留一个设置项：下拉里同时放开关、触发时机和提前量。
+            AutoBatterySwapMode = _config.Define(
+                "battery.auto_swap",
+                AutoBatterySwap.Auto2,
+                "电力",
+                () => "自动换电池",
+                new[] { AutoBatterySwap.Off, AutoBatterySwap.MorningOnly,
+                        AutoBatterySwap.Auto1, AutoBatterySwap.Auto2 },
+                () => "机器没电时自动换上有电的电池，旧电池放回充电器；水瓶打印机这类手动用的，按按钮才装电池、用完自动取回。数字越大换得越早。");
 
             // 把定义（可能带新的默认值）写回文件
             _config.Save();

@@ -88,6 +88,9 @@ namespace QoL
                 // 荧光莓品质徽标：图标右上角标出酿酒分数（+2/+1/+0/-1）
                 BerryBadge.Apply(Settings);
 
+                // 全自动换电：周期型机器常驻补换 + 主动工具按按钮时装填、用完取回
+                AutoBatterySwap.Apply();
+
                 QLog.Info("已启用：" + Settings.Count + " 项设置，配置文件 " + Settings.FilePath + "，日志路径 " + QLog.LogFilePath);
             }
             catch (Exception e)
@@ -100,6 +103,7 @@ namespace QoL
         public void OnDisable()
         {
             ModHook.OnCreateTooltipLate -= OnTooltipLate;
+            AutoBatterySwap.Remove();
             QuickToolHotkey.Remove();
             QuickBoxSelect.Remove();
             SelectionCount.Remove();

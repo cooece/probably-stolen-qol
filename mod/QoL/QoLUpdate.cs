@@ -79,6 +79,9 @@ namespace QoL
                 // 框选统计：把数量叠在收银机屏幕上，最多列 3 种（内部 0.1 秒限流）
                 SelectionCount.Tick();
 
+                // 全自动换电：统一队列补换机器电池（内部 0.2 秒限流）
+                AutoBatterySwap.Tick(dt);
+
                 // F9 调试面板：汉化 + 自定义开关键（内部判空/限流）
                 DebugPanelZh.Tick();
 
