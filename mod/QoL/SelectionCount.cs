@@ -18,10 +18,12 @@ namespace QoL
     /// 把它铺到游戏里收银机 SpriteRenderer 对应的整张贴图矩形上，正好盖掉原有的
     /// Useful info，同时不会碰到机器其它部分。
     ///
-    /// 文字区用贴图比例锚在遮罩形状内部的安全矩形里，再套一层 RectMask2D 硬裁剪，
-    /// 保证怎么算都不会跑到形状外。文字颜色固定 #172C3E，和屏幕原生文字一致。
-    /// 版式：标题与物品明细在安全区里居中；底部一行以中线为界左右分栏，
-    /// 左栏「种类 N」、右栏「数量 M」，各自左对齐并留相同内边距。
+    /// 版式是上中下三块各自独立锚定、位置恒定，框选 1 种还是 3 种都不会移动：
+    ///   顶部一行：标题「商品统计」，水平居中，贴安全区顶；
+    ///   中间三行：物品明细，靠左侧黄线左对齐，贴着标题下方往下排；
+    ///   底部一行：以中线为界左「种类 N」右「数量 M」，各自左对齐、贴安全区底。
+    /// 字号按满 5 行固定算，不随物品数量变化。文字区套一层 RectMask2D 硬裁剪，
+    /// 保证永远出不了遮罩形状；颜色固定 #172C3E，和屏幕原生文字一致。
     ///
     /// 位置不写死屏幕比例：运行时找收银机 SpriteRenderer，用 bounds 经主相机投影出
     /// 整张贴图在屏幕上的矩形。换分辨率、相机缩放、换美化贴图都不会跑偏。
@@ -35,6 +37,7 @@ namespace QoL
         private const int SortingOrder = 960;
         private const int MaxKinds = 3;
         private const int MaxNameChars = 5;
+        private const int RowSlots = 5; // 标题 1 + 明细 3 + 合计 1
 
         // 遮罩形状在 960×540 图里的范围（图像坐标，原点左上）
         private const float ShapeLeft = 676f / 960f;
@@ -42,11 +45,11 @@ namespace QoL
         private const float ShapeTop = 184f / 540f;
         private const float ShapeBottom = 237f / 540f;
 
-        // 文字安全区：取形状最窄的下半段，再各留 2~4 px 边距
+        // 文字安全区：横向取形状最窄段内缩，纵向尽量撑到形状上下沿
         private const float TextLeft = 685f / 960f;
         private const float TextRight = 743f / 960f;
-        private const float TextTop = 188f / 540f;
-        private const float TextBottom = 233f / 540f;
+        private const float TextTop = 186f / 540f;
+        private const float TextBottom = 236f / 540f;
 
         // 兜底：找不到收银机对象时，按真实截图估的屏幕区域比例（相对游戏区域）
         private const float FallbackLeft = 0.5595f;
@@ -72,7 +75,8 @@ namespace QoL
         private static RectTransform _patch;
         private static Image _patchImage;
         private static RectTransform _clip;
-        private static TMP_Text _text;
+        private static TMP_Text _title;
+        private static TMP_Text _items;
         private static TMP_Text _footerLeft;
         private static TMP_Text _footerRight;
 
@@ -85,7 +89,6 @@ namespace QoL
         private static string _lastText = "";
         private static string _leftText = "";
         private static string _rightText = "";
-        private static int _rows = 3;
 
         private static bool Enabled
         {
@@ -183,10 +186,8 @@ namespace QoL
             int total = 0;
             for (int i = 0; i < Kinds.Count; i++) total += Kinds[i].Units;
 
+            // 只产中间明细，标题固定、合计单独两栏
             Builder.Length = 0;
-            Builder.Append("<b>商品统计</b>");
-
-            // 屏幕小，只列数量最多的前 3 种；名字太长截一下
             int shown = Mathf.Min(Kinds.Count, MaxKinds);
             for (int i = 0; i < shown; i++)
             {
@@ -196,13 +197,13 @@ namespace QoL
                     ? k.Name.Substring(0, MaxNameChars - 1) + "…"
                     : k.Name;
 
-                Builder.Append('\n').Append(name).Append(" ×").Append(k.Units);
+                if (i > 0) Builder.Append('\n');
+                Builder.Append(name).Append(" ×").Append(k.Units);
             }
 
-            // 合计行以中线为界左右分开；数字始终是整批，不因只列 3 种而少算
+            // 合计数字始终是整批，不因为只列 3 种而少算
             _leftText = "种类 " + Kinds.Count;
             _rightText = "数量 " + total;
-            _rows = shown + 2; // 标题 + 明细 + 底部合计行
             return Builder.ToString();
         }
 
@@ -217,7 +218,7 @@ namespace QoL
             if (text != _lastText)
             {
                 _lastText = text;
-                _text.text = text;
+                _items.text = text;
                 _footerLeft.text = _leftText;
                 _footerRight.text = _rightText;
             }
@@ -255,14 +256,14 @@ namespace QoL
             _patch = null;
             _patchImage = null;
             _clip = null;
-            _text = null;
+            _title = null;
+            _items = null;
             _footerLeft = null;
             _footerRight = null;
             _register = null;
             _lastText = "";
             _leftText = "";
             _rightText = "";
-            _rows = 3;
             _failed = false;
         }
 
@@ -305,22 +306,17 @@ namespace QoL
                 _clip.offsetMax = Vector2.zero;
                 clipGo.AddComponent<RectMask2D>();
 
-                // 主文字：标题 + 物品明细，在左边界和右边界之间居中；底部一行留给合计
-                var textGo = new GameObject("Text", typeof(RectTransform));
-                textGo.transform.SetParent(_clip, false);
-                RectTransform tr = (RectTransform)textGo.transform;
-                tr.anchorMin = Vector2.zero;
-                tr.anchorMax = Vector2.one;
-                tr.offsetMin = Vector2.zero;
-                tr.offsetMax = Vector2.zero;
-
-                _text = textGo.AddComponent<TextMeshProUGUI>();
-                SetupText(_text);
-                _text.alignment = TextAlignmentOptions.Center;
-
-                // 合计行：以中线为界左右两栏，各自左对齐、留同样的内边距
-                _footerLeft = MakeFooter("Kind", 0f, 0.5f);
-                _footerRight = MakeFooter("Total", 0.5f, 1f);
+                // 上中下三块用比例锚点钉死：顶 1 行 / 中 3 行 / 底 1 行。
+                // 矩形一次性设好，运行时不改，框选几种商品都不会移动。
+                _title = MakeBlock("Title", TextAlignmentOptions.Top,
+                                   new Vector2(0f, 0.8f), Vector2.one);
+                _title.text = "<b>商品统计</b>"; // 固定不变
+                _items = MakeBlock("Items", TextAlignmentOptions.TopLeft,
+                                   new Vector2(0f, 0.2f), new Vector2(1f, 0.8f));
+                _footerLeft = MakeBlock("Kind", TextAlignmentOptions.BottomLeft,
+                                        Vector2.zero, new Vector2(0.5f, 0.2f));
+                _footerRight = MakeBlock("Total", TextAlignmentOptions.BottomLeft,
+                                         new Vector2(0.5f, 0f), new Vector2(1f, 0.2f));
 
                 _root.SetActive(false);
                 return true;
@@ -343,20 +339,21 @@ namespace QoL
             t.raycastTarget = false;
         }
 
-        /// <summary>合计行的一栏，贴着裁剪框底部，高度按行高在 Reposition 里给。</summary>
-        private static TMP_Text MakeFooter(string name, float x0, float x1)
+        /// <summary>裁剪框里的一个文字块，用比例锚点钉在固定位置。</summary>
+        private static TMP_Text MakeBlock(string name, TextAlignmentOptions alignment,
+                                          Vector2 aMin, Vector2 aMax)
         {
             var go = new GameObject(name, typeof(RectTransform));
             go.transform.SetParent(_clip, false);
             RectTransform rt = (RectTransform)go.transform;
-            rt.anchorMin = new Vector2(x0, 0f);
-            rt.anchorMax = new Vector2(x1, 0f);
+            rt.anchorMin = aMin;
+            rt.anchorMax = aMax;
             rt.offsetMin = Vector2.zero;
-            rt.offsetMax = new Vector2(0f, 20f);
+            rt.offsetMax = Vector2.zero;
 
             TMP_Text t = go.AddComponent<TextMeshProUGUI>();
             SetupText(t);
-            t.alignment = TextAlignmentOptions.Left; // 垂直居中 + 水平左
+            t.alignment = alignment;
             return t;
         }
 
@@ -420,24 +417,22 @@ namespace QoL
                 _patch.sizeDelta = new Vector2(texRect.width / scale, texRect.height / scale);
                 _patchImage.enabled = exact && _patchImage.sprite != null;
 
-                // 字号同时受行数和宽度约束，保证每行都塞得进安全矩形
-                float wLogical = _patch.rect.width * (TextRight - TextLeft);
-                float hLogical = _patch.rect.height * (TextBottom - TextTop);
-                // 1.35 留足行距，避免不同中文字体的行高把最后一行挤出裁剪框
-                float byHeight = hLogical / (Mathf.Max(3, _rows) * 1.35f);
-                float byWidth = wLogical / 7.8f;
-                float font = Mathf.Clamp(Mathf.Min(byHeight, byWidth), 8f, 40f);
-                float lineH = font * 1.35f;
+                // 用补丁自己的 rect 算安全区（非 stretch 锚点，sizeDelta 即刻生效）
+                float w = _patch.rect.width * (TextRight - TextLeft);
+                float h = _patch.rect.height * (TextBottom - TextTop);
+                float lineH = h / RowSlots;
 
-                _text.fontSize = font;
+                // 字号按满 5 行固定算，不随物品数量变化 → 三块位置永远不动
+                float font = Mathf.Clamp(Mathf.Min(lineH / 1.35f, w / 7.8f), 8f, 40f);
+                float pad = font * 0.35f; // 商品名与「种类」都靠左侧黄线对齐
+
+                _title.fontSize = font;
+                _items.fontSize = font;
                 _footerLeft.fontSize = font;
                 _footerRight.fontSize = font;
 
-                // 主文字框的底边直接抬高一行，彻底避开合计行；两栏各自贴底
-                _text.rectTransform.offsetMin = new Vector2(0f, lineH);
-                _footerLeft.rectTransform.offsetMax = new Vector2(0f, lineH);
-                _footerRight.rectTransform.offsetMax = new Vector2(0f, lineH);
-                float pad = font * 0.35f;
+                _title.margin = Vector4.zero;
+                _items.margin = new Vector4(pad, 0f, 0f, 0f);
                 _footerLeft.margin = new Vector4(pad, 0f, 0f, 0f);
                 _footerRight.margin = new Vector4(pad, 0f, 0f, 0f);
             }
