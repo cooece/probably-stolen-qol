@@ -3,25 +3,38 @@
   模组清单。加载器靠这个文件识别模组，文件名必须是 manifest.xml，
   并且和 DLL 放在同一个文件夹里。
 
-  ID        全局唯一，建议用 作者名.模组名 的格式
+  ID        全局唯一，只能用 ASCII 字母数字和 _ - .，最多 64 位
+            （也会用来命名玩家磁盘上的文件夹和配置文件）
   ModVersion 模组版本（显示在游戏里的模组列表）
   GameVersions 适配的游戏版本，写 0.46D 这类
   Assemblies 要加载的 DLL 文件名，必须和实际文件名一致
-  Capabilities 申请的能力：留空表示普通模组；
-               需要读写文件才写 files，联网写 network
+  Capabilities 申请的能力：本模组会写自己的日志和快捷键文件，所以要声明 files；
+            写入位置都在 AppData\LocalLow 下的 ModConfigs，不碰系统其他地方
+
+  发布到创意工坊前，在游戏里跑一次 F8 控制台的 mod-scan local.qol，
+  确认「检测到的能力」都被这里声明了，否则玩家启用时会被拒绝。
 -->
 <Mod>
   <ID>local.qol</ID>
-  <Name>深空当铺 · 我的整合模组</Name>
-  <Author>我自己</Author>
-  <ModVersion>0.1.0</ModVersion>
+  <Name>深空当铺 · 便利整合（QoL Bundle）</Name>
+  <Author>YourName</Author>
+  <ModVersion>1.0.0</ModVersion>
   <GameVersions>
     <Version>0.46D</Version>
   </GameVersions>
-  <Description>深空当铺实用功能整合：更清楚的提示、更省事的交易与快捷操作。每项都能在设置里单独开关，改完立即生效。</Description>
+  <Description>深空当铺的一站式体验优化，全部后台生效，只保留一个设置面板。
+
+交易与顾客：价格趋势、真伪自动揭穿、成交金额与声望播报、到店提示、对话加速、未击杀改造体的摇铃确认。
+仓储与物品：箱子批量贴标签、荧光莓品质角标、物品详情与价格拆解、长按框选统计数量。
+机器与电力：全自动换电池（周期机器早晨补换、主动工具按需装填）、机器内部与模块提示。
+面板里每一项都能单独开关，改完立即生效；不碰存档，新档老档都安全。
+
+A one-stop quality-of-life bundle: price trends, auto-authentication, cash and reputation popups, dialogue speed-up, box labelling, berry quality badges, item details, box-drag counting, fully automatic battery swapping, machine and power tooltips. Everything toggles individually in the settings panel and applies immediately; saves are never touched.</Description>
   <Prerequisites />
   <Assemblies>
     <Assembly>QoL.dll</Assembly>
   </Assemblies>
-  <Capabilities />
+  <Capabilities>
+    <Capability>files</Capability>
+  </Capabilities>
 </Mod>
