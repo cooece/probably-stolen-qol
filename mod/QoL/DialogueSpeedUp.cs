@@ -20,7 +20,7 @@ namespace QoL
             get
             {
                 QoLSettings settings = ModEntry.Settings;
-                return settings != null && settings.DialogueSpeedUp.Value;
+                return settings != null && settings.DialogueFast.Value;
             }
         }
 

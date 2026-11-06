@@ -22,38 +22,37 @@ namespace QoL
         internal const string BadgeModeGrade = "优良中差";
         internal const string BadgeModeAbcd = "ABCD";
 
-        /// <summary>显示物品描述文字和"双击以打开"这类操作提示。关掉只留数值。</summary>
+        internal const string BoxSelectOff = "关闭";
+
+        /// <summary>显示物品说明、厂商与操作提示。关掉只留名称和数值。</summary>
         internal ConfigEntry<bool> ShowItemDescription { get; }
 
-        /// <summary>用彩色标签代替原版提示框里的 [分类] 文字。</summary>
+        /// <summary>用彩色标签代替提示框里的 [分类] 文字。</summary>
         internal ConfigEntry<bool> TagsEnabled { get; }
 
-        /// <summary>鼠标停在店内顾客身上时，显示本次接待已经说过的对话。</summary>
+        /// <summary>鼠标停在顾客身上时，显示本次接待说过的对话。</summary>
         internal ConfigEntry<bool> CustomerHistory { get; }
 
-        /// <summary>通缉犯或改造体顾客到店时弹出提示。</summary>
+        /// <summary>通缉犯或改造体进店时弹提示。</summary>
         internal ConfigEntry<bool> CustomerAlert { get; }
 
-        /// <summary>改造体没击杀就想叫下一位时，先弹一个原版样式的确认框。</summary>
+        /// <summary>没击杀改造体就想叫下一位时，先确认。</summary>
         internal ConfigEntry<bool> ConfirmSkipAug { get; }
 
-        /// <summary>全局对话加速：打字速度提升约5倍，句间停顿缩短70%，按住空格可极速快进跳过。</summary>
-        internal ConfigEntry<bool> DialogueSpeedUp { get; }
+        /// <summary>对话加速：一个开关同时管全局打字加速与估价时跳过中间对话。</summary>
+        internal ConfigEntry<bool> DialogueFast { get; }
 
-        /// <summary>柜台上还有顾客没谈完就想打烊时，先问一下。</summary>
+        /// <summary>柜台还有顾客没谈完就想打烊时，先确认。</summary>
         internal ConfigEntry<bool> ConfirmCloseBusy { get; }
 
-        /// <summary>店内那块小显示器上多显示一行今日行情。</summary>
+        /// <summary>店内小显示器上多显示一行今日行情。</summary>
         internal ConfigEntry<bool> ShowPriceTrend { get; }
 
         /// <summary>真伪鉴定：提示显示结论、谈判时自动揭穿假货。</summary>
         internal ConfigEntry<bool> Authenticity { get; }
 
-        /// <summary>交易成交后弹窗显示声望与金钱增减。</summary>
+        /// <summary>成交后弹窗显示金额与声望变化。</summary>
         internal ConfigEntry<bool> TradeResultPopup { get; }
-
-        /// <summary>估价连续批量提交时，自动跳过中间对话加速（最后一件照常播放）。</summary>
-        internal ConfigEntry<bool> AppraisalFastDialogue { get; }
 
         /// <summary>自动把 5 类单据移入垃圾桶（一个开关统一控制）。</summary>
         internal ConfigEntry<bool> AutoDiscardDocuments { get; }
@@ -61,25 +60,22 @@ namespace QoL
         /// <summary>需求高亮：彩色框线标出顾客想要的物品。</summary>
         internal ConfigEntry<bool> DemandHighlight { get; }
 
-        /// <summary>容器内水质档位变化后，自动把标签同步为真实水质。</summary>
+        /// <summary>容器内水质跨档变化后，自动把标签同步为真实水质。</summary>
         internal ConfigEntry<bool> WaterLabelSync { get; }
 
-        /// <summary>道具快捷键：右键道具选“设置快捷键”，按键从所有容器拿起同类道具并连续使用。</summary>
+        /// <summary>道具快捷键：右键道具绑定按键，跨容器连续拿起同类道具使用。</summary>
         internal ConfigEntry<bool> ToolHotkeyEnabled { get; }
 
         /// <summary>框选多个同类物品后双击标签机快捷键，用原版面板批量改标签。</summary>
         internal ConfigEntry<bool> BatchLabelEnabled { get; }
 
-        /// <summary>在物品上按住左键不动即可拉出框选框，满容器也能框选。</summary>
-        internal ConfigEntry<bool> BoxSelectLongPress { get; }
+        /// <summary>便捷框选：一个下拉同时管开关与长按时长（含「关闭」）。</summary>
+        internal ConfigEntry<string> BoxSelectMode { get; }
 
-        /// <summary>长按触发框选所需的按住时长（毫秒文本）。</summary>
-        internal ConfigEntry<string> BoxSelectHoldMs { get; }
-
-        /// <summary>调试面板：一个下拉同时管开关与自定义快捷键（关闭 / 仅 F9 / 某个 F 键）。</summary>
+        /// <summary>调试面板：一个下拉同时管开关与自定义快捷键。</summary>
         internal ConfigEntry<string> DebugPanelMode { get; }
 
-        /// <summary>详细日志记录：将详细调试信息与排查日志写入控制台与独立日志文件。</summary>
+        /// <summary>详细日志：把排查信息写入独立日志文件。</summary>
         internal ConfigEntry<bool> VerboseLogging { get; }
 
         /// <summary>荧光莓角标：一个下拉同时管开关与呈现方式（含「关闭」）。</summary>
@@ -100,84 +96,77 @@ namespace QoL
                 "tooltip.show_description",
                 false,
                 "提示框",
-                () => "显示描述、厂商与操作提示",
-                () => "提示框里那些不参与计算的文字：物品说明、风味文本、物品名下面那行厂商名，以及「双击以打开」这类操作提示。关掉后提示框只保留名称和数值，更省眼睛。");
+                () => "显示物品说明",
+                () => "物品提示框里显示说明文字、厂商和操作提示。关掉后只留名称和数值，更清爽。");
 
             // ---------------- 分类标签 ----------------
-            // 尺寸（内边距/间距/字号/离顶距离）已定为固定值，写死在 TagStyle 里，不再开放设置。
             TagsEnabled = _config.Define(
                 "tag.enabled",
                 true,
                 "分类标签",
-                () => "用彩色标签代替 [分类] 文字",
-                () => "把提示框里那行 [日用品][净水用品] 换成提示框上方的彩色小标签。关掉就恢复原版文字。");
+                () => "彩色分类标签",
+                () => "把提示框里的 [日用品] 这类文字换成上方的彩色小标签。关掉就恢复原版文字。");
 
             // ---------------- 顾客 ----------------
             CustomerHistory = _config.Define(
                 "customer.history",
                 true,
                 "顾客",
-                () => "悬停顾客查看本次对话",
-                () => "鼠标停在店内顾客身上时，显示这次接待已经说过的对话。顾客离开后清空。");
+                () => "悬停查看说过的话",
+                () => "鼠标停在顾客身上，就能看到本次接待已经说过的对话。顾客离开后清空。");
 
             CustomerAlert = _config.Define(
                 "customer.alert",
                 true,
                 "顾客",
-                () => "顾客到店提示",
-                () => "通缉犯或改造体顾客到店时，在人物旁边显示一行提示：检测到通缉犯到店 / 检测到改造体到店 / 检测到通缉犯·改造体。潜伏型通缉犯不会提示。");
+                () => "特殊顾客到店提示",
+                () => "通缉犯或改造体进店时，在人物旁边提示一句。潜伏型通缉犯不会提示。");
 
             ConfirmSkipAug = _config.Define(
                 "customer.confirm_skip_aug",
                 true,
                 "顾客",
-                () => "未击杀改造体时摇铃先确认",
-                () => "柜台站着改造体、你还没开枪就想摇铃叫下一位时，先弹一个「未击杀改造体，是否跳过？」的确认框。选跳过＝直接送走这位顾客，放弃击杀奖励。");
+                () => "摇铃跳过改造体先确认",
+                () => "柜台是改造体、还没击杀就想叫下一位时，先问一声，免得白丢击杀奖励。");
 
-            DialogueSpeedUp = _config.Define(
+            // 键名沿用旧版 customer.dialogue_speedup，玩家已设的状态不会丢。
+            DialogueFast = _config.Define(
                 "customer.dialogue_speedup",
                 true,
                 "顾客",
-                () => "全局对话加速",
-                () => "让所有角色（普通顾客、发明家、商人、小偷、治安官、剧情人物）说话打字速度大幅提升约5倍，句间停顿缩短70%；按住空格键可极速连发快进，遇到选项分支自动停止。");
+                () => "对话加速",
+                () => "所有对话打字更快，按住空格可快进；连续估价时自动跳过中间对话。关掉就恢复原版节奏。");
 
             // ---------------- 打烊 ----------------
             ConfirmCloseBusy = _config.Define(
                 "store.confirm_close_busy",
                 true,
                 "打烊",
-                () => "顾客没谈完时打烊先确认",
-                () => "柜台上还有顾客、生意还没谈完就拉闸门时，先弹一个确认框问一声，避免误关店。队列里还有人排队、或柜台这位还没走，都会先确认。");
+                () => "没谈完时打烊先确认",
+                () => "柜台还有顾客就想拉闸门时，先确认一下，防止误关店。");
 
             // ---------------- 店内日历 ----------------
             ShowPriceTrend = _config.Define(
                 "calendar.price_trend",
                 true,
                 "店内日历",
-                () => "显示器上显示今日行情",
-                () => "收银台旁那块小显示器的日期下面，多显示一行今天的市场波动：降价绿色、涨价红色。数据取自当前生效的事件（日用品救济行动、建设项目、供水过剩等），和实际结算价一致。");
+                () => "显示今日行情",
+                () => "收银台小显示器上多加一行今日涨跌：降价绿、涨价红。");
 
-            // ---------------- 真伪鉴定 ----------------
+            // ---------------- 交易 ----------------
             Authenticity = _config.Define(
                 "trade.authenticity",
                 true,
                 "交易",
-                () => "真伪鉴定（谈判时自动）",
-                () => "物品提示里显示真伪结论（真品 / 假货 / 隐藏缺陷 / 水质虚标）和真实价值；顾客把物品放上台面时自动揭穿，不用手动鉴定。估价客户带来的鉴定物品（手、肋排、等离子燃料）也会显示正确价值，方便精准出价。");
+                () => "自动真伪鉴定",
+                () => "物品提示里直接显示真假和真实价值；顾客放上假货时自动揭穿，不用手动鉴定。");
 
             TradeResultPopup = _config.Define(
                 "trade.result_popup",
                 true,
                 "交易",
                 () => "交易结果弹窗",
-                () => "和顾客买/卖成交后，弹一条提示显示这次加了（或扣了）多少声望、多少现金。声望是实际结算值（已含难度、阵营和天赋倍率），卖货加钱、买货扣钱。");
-
-            AppraisalFastDialogue = _config.Define(
-                "trade.appraisal_fast_dialogue",
-                true,
-                "交易",
-                () => "提交下一件前跳过对话（估价加速）",
-                () => "连续批量提交估价物品时，自动跳过中间顾客的对话（相当于自动连按空格加速），最后一件物品的对话照常播放。如果想慢慢看每一件估价后的顾客反应，关掉此项即可。");
+                () => "买卖成交后弹一条提示，显示到账金额和声望变化。");
 
             // ---------------- 单据 ----------------
             AutoDiscardDocuments = _config.Define(
@@ -185,15 +174,15 @@ namespace QoL
                 true,
                 "单据",
                 () => "自动丢弃单据",
-                () => "鉴定顾客商品后产生的鉴定单、事件回执单、治安回执单、手写便签、探险日志，都会自动移进垃圾桶，不再占用柜台和背包。一个开关统一控制这 5 类。机器说明书和玩家特意放进槽位的便签会保留，不会误丢。");
+                () => "鉴定单、回执、便签这些废纸自动进垃圾桶，不占柜台和背包。说明书和特意放好的便签会保留。");
 
             // ---------------- 水与容器 ----------------
             WaterLabelSync = _config.Define(
                 "water.label_sync",
                 true,
                 "水与容器",
-                () => "水质变化后同步容器标签",
-                () => "容器里的水被净化、混合、加注或蒸发后，实际水质档位变了，标签却还停在旧档位；开启后自动把标签更新成真实水质。只有实际水质真的跨档变化时才改，手动用标签机贴的标签、顾客带来的虚标水都不会被动到。");
+                () => "水质变了自动改标签",
+                () => "水被净化或混合后水质跨档了，标签自动跟着更新；手动贴的标签不会动。");
 
             // ---------------- 需求高亮 ----------------
             DemandHighlight = _config.Define(
@@ -201,10 +190,10 @@ namespace QoL
                 true,
                 "需求高亮",
                 () => "标出顾客想要的物品",
-                () => "柜台前顾客想要的物品用彩色框线标出：绿线=想要、琥珀警戒带=想要的赃物、红双线=想要的违禁品、角括号=容器里装着想要的。顾客没来时不显示，几乎不占性能。");
+                () => "顾客想要的物品加彩色框：绿＝想要、黄＝赃物、红＝违禁品。顾客走了就不显示。");
 
             // ---------------- 道具快捷键 ----------------
-            // 注意：绑定数据不走 ModConfig（否则会在设置页显示一个文本框），
+            // 绑定数据不走 ModConfig（否则会在设置页显示一个文本框），
             // 由 QuickToolHotkey 自己存到独立文件；内容是 key=value;... 纯文本，
             // 只是文件扩展名叫 .hotkeys.json，并不是 JSON 格式。
             ToolHotkeyEnabled = _config.Define(
@@ -212,30 +201,25 @@ namespace QoL
                 true,
                 "道具快捷键",
                 () => "道具快捷键",
-                () => "右键自己的道具（工具、涡轮增压器等能装备的）选“设置快捷键”，再按一个键或鼠标侧键；以后按这个键就从所有自己的容器里拿起一个同类道具，点目标使用，用完自动换下一个同类的，没有了就停止；右键或 Esc 取消。涡轮增压器只拿已就绪的（高级、超科技优先，一次性的最后用）。");
+                () => "右键自己的道具选「设置快捷键」，之后按这个键就从各容器里连续拿起同类道具使用；右键或 Esc 取消。");
 
             BatchLabelEnabled = _config.Define(
                 "tool.batch_label",
                 true,
                 "道具快捷键",
                 () => "双击快捷键批量改标签",
-                () => "框选多个同类物品（多个芬太片、多瓶水、多个梦尘等）后，快速按两下标签打印机绑定的快捷键，会弹出游戏原版的标签打印机面板；在面板里改任意标签，都会实时同步到框选的其它同类物品。不框选或只选一个时，快捷键仍是原来的单件用法。");
+                () => "框选多个同类物品后，连按两下标签机快捷键，改一个标签就同步给全部。不框选时仍是单件用法。");
 
             // ---------------- 便捷框选 ----------------
-            BoxSelectLongPress = _config.Define(
-                "select.long_press_band",
-                true,
-                "便捷框选",
-                () => "长按左键直接从物品上框选",
-                () => "原版只能从容器的空位起拖框选，容器或机器被物品填满后就拉不出框。开启后：在物品上按住左键不动一小会儿，就会自动进入框选状态，松开前拖动即可拉出框选框，不需要按任何键。按下后立刻拖动仍是原来的拿物品 / 双击 / 单选，手感不变。");
-
-            BoxSelectHoldMs = _config.Define(
+            // 键名沿用旧版 select.hold_ms（旧值是 "180" 这类数字），合并后的下拉
+            // 仍包含这些数字，玩家已选的时长不会丢；新增「关闭」代替原来的独立开关。
+            BoxSelectMode = _config.Define(
                 "select.hold_ms",
                 "180",
                 "便捷框选",
                 () => "长按触发时长（毫秒）",
-                new[] { "120", "180", "250", "350" },
-                () => "在物品上按住多久才转成框选。默认 180 毫秒；觉得容易误触发就调大，觉得要等太久就调小。只有按住期间鼠标几乎没动才会触发，一移动就照常拿物品。");
+                new[] { BoxSelectOff, "120", "180", "250", "350" },
+                () => "在物品上按住左键不动，到时间就能拉出框选框，容器装满也一样。数字越小越灵敏、越大越不容易误触；选「关闭」则不启用。");
 
             // ---------------- 开发者 ----------------
             // 键名沿用旧版 dev.panel_hotkey，玩家已经选过的按键不会丢。
@@ -245,14 +229,14 @@ namespace QoL
                 "开发者",
                 () => "汉化调试面板",
                 new[] { DebugPanelOff, DebugPanelF9Only, "F5", "F6", "F7", "F8", "F10", "F11", "F12" },
-                () => "一个设置管全部：选「关闭」＝不汉化也不加键，还原英文原版；选「仅 F9」＝只汉化，沿用游戏自带 F9；选某个 F 键＝汉化并额外用该键开关面板。改完立即生效，不用重启。");
+                () => "一个设置管全部：关闭＝英文原版；仅 F9＝只汉化；选某个 F 键＝汉化并用它开关面板。改完立即生效。");
 
             VerboseLogging = _config.Define(
                 "dev.verbose_logging",
                 true,
                 "开发者",
-                () => "详细日志记录",
-                () => "开启后，模组会在控制台及 ModConfigs/local.qol.log 中输出详细诊断日志（包括模块初始化、快捷键触发、按键录入、右键菜单构建等）。排查故障时请保持开启，遇到问题只需复制该日志文件。");
+                () => "详细日志",
+                () => "把详细排查日志写到 ModConfigs/local.qol.log。出问题时复制这个文件就行。");
 
             // ---------------- 荧光莓 ----------------
             // 键名沿用旧版 berry.display_mode，玩家已选的写法不会丢。
@@ -262,7 +246,7 @@ namespace QoL
                 "荧光莓",
                 () => "角标呈现方式",
                 new[] { BadgeModeJiaYi, BadgeModeGrade, BadgeModeAbcd, BadgeModeOff },
-                () => "一个设置管全部，默认开启：在荧光莓图标右上角显示品质角标，无需放大镜鉴定。甲乙丙丁＝甲最好、丁发霉；优良中差＝优劣更直白；ABCD＝字母序号；关闭＝不显示角标。都是彩色小底块配黑字，底色固定：绿=优(+2)、黄=普通(+1)、灰=差(+0)、红=发霉(-1)。");
+                () => "默认开启。荧光莓图标右上角显示品质角标，不用放大镜：甲乙丙丁＝甲最好、丁发霉；优良中差更直白；ABCD 是字母序号。选关闭则不显示。");
 
             // 把定义（可能带新的默认值）写回文件
             _config.Save();

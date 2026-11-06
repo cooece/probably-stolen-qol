@@ -66,7 +66,7 @@ namespace QoL
             {
                 if (_disabled) return false;
                 QoLSettings s = ModEntry.Settings;
-                return s != null && s.BoxSelectLongPress.Value;
+                return s != null && s.BoxSelectMode.Value != QoLSettings.BoxSelectOff;
             }
         }
 
@@ -75,7 +75,7 @@ namespace QoL
             get
             {
                 QoLSettings s = ModEntry.Settings;
-                string raw = s != null && s.BoxSelectHoldMs != null ? s.BoxSelectHoldMs.Value : null;
+                string raw = s != null && s.BoxSelectMode != null ? s.BoxSelectMode.Value : null;
                 int ms;
                 if (!int.TryParse(raw, out ms) || ms < 80 || ms > 1000) ms = 180;
                 return ms / 1000f;

@@ -38,7 +38,7 @@ namespace QoL
             get
             {
                 QoLSettings settings = ModEntry.Settings;
-                return settings == null || settings.AppraisalFastDialogue.Value;
+                return settings == null || settings.DialogueFast.Value;
             }
         }
 

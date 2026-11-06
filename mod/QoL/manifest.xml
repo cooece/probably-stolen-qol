@@ -18,7 +18,7 @@
   <GameVersions>
     <Version>0.46D</Version>
   </GameVersions>
-  <Description>自用整合模组，开发中。</Description>
+  <Description>深空当铺实用功能整合：更清楚的提示、更省事的交易与快捷操作。每项都能在设置里单独开关，改完立即生效。</Description>
   <Prerequisites />
   <Assemblies>
     <Assembly>QoL.dll</Assembly>
