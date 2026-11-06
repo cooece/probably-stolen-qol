@@ -110,7 +110,10 @@ namespace QoL
 
         private sealed class ElementState
         {
-            /// <summary>是不是荧光莓。物品不会变身份，判定一次就够。</summary>
+            /// <summary>
+            /// 是不是荧光莓。只缓存「是」的结果——元素刚建出来时标签可能还没写入，
+            /// 那时判定会得到 false，如果缓存下来这个格子就永远不显示角标了。
+            /// </summary>
             internal bool IsBerry;
 
             /// <summary>角标节点。第一次需要显示时才创建，没有角标的元素不占这层开销。</summary>
@@ -144,6 +147,9 @@ namespace QoL
             AccessTools.Field(typeof(GameItemElement), "stackCountText");
 
         private static int _logged;
+
+        // 诊断：统计识别到荧光莓的次数，只打印前几次定位问题
+        private static int _diagBerryHits;
 
         // ------------------------------------------------------------------
         // 注册
@@ -289,15 +295,35 @@ namespace QoL
             {
                 state = States.GetValue(element, CreateState);
             }
-            catch
+            catch (Exception e)
             {
+                if (_logged < 2)
+                {
+                    _logged++;
+                    QLog.Warn("角标诊断：取状态失败 —— " + e.GetType().Name + " " + e.Message);
+                }
+
                 return;
             }
 
-            // 绝大多数格子不是荧光莓，第一道门就把它们挡住了
+            // 没判定成荧光莓的不缓存结论：元素刚创建时标签可能还没写进去，
+            // 只在 true 时锁定，false 每次重新判（非荧光莓第一步就是字符串比较，很便宜）。
             if (!state.IsBerry)
             {
-                return;
+                state.IsBerry = IsBerry(element);
+
+                if (!state.IsBerry)
+                {
+                    return;
+                }
+            }
+
+            if (_diagBerryHits < 3)
+            {
+                _diagBerryHits++;
+                QLog.Info("荧光莓角标：识别到荧光莓 id=" + (element.identifier ?? "null")
+                          + " grade=" + DisplayGrade(element)
+                          + " style=" + TextStyle);
             }
 
             Track(element);
