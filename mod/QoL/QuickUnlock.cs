@@ -184,7 +184,30 @@ namespace QoL
                 if (universal == null && sprite == UniversalCard) universal = item;
             }
 
+            if (universal != null)
+            {
+                QLog.Info("[双击开锁] 没有专用卡，改用万能卡「" + DisplayName(universal) + "」（" + WhereIs(universal) + "）");
+            }
+
             return universal;
+        }
+
+        /// <summary>卡在哪个容器里 —— 只用于日志，方便玩家确认消耗的是哪一张。</summary>
+        private static string WhereIs(GameItem item)
+        {
+            EmporiumEntry store = EmporiumEntry.Instance;
+            if (store == null || item == null) return "?";
+
+            GameInventory parent = item.parentInventory;
+            if (parent == null) return "不在容器里";
+
+            if (ReferenceEquals(parent, store.invElement)) return "物品栏";
+            if (ReferenceEquals(parent, store.backInvinvElement)) return "后仓";
+            if (ReferenceEquals(parent, store.frontInvinvElement)) return "前厅柜台";
+            if (ReferenceEquals(parent, store.afterhourInventory)) return "店面地面";
+            if (ReferenceEquals(parent, store.showcaseElement)) return "展示柜";
+
+            return "背包或其它容器";
         }
 
         /// <summary>玩家身上、后仓、前厅、地下的所有物品（含背包等嵌套容器）。</summary>
@@ -234,7 +257,10 @@ namespace QoL
                 return;
             }
 
-            string body = "确定要打开「" + DisplayName(box) + "」吗？\n\n将消耗 1 张 " + DisplayName(card) + "。";
+            string body = "确定要打开「" + DisplayName(box) + "」吗？\n\n将消耗 1 张「" +
+                          DisplayName(card) + "」。\n这张卡在：" + WhereIs(card);
+
+            QLog.Info("[双击开锁] 准备用「" + DisplayName(card) + "」(" + card.spritePath + "，" + WhereIs(card) + ") 开「" + DisplayName(box) + "」");
 
             _dialogOpen = true;
             panel.OpenPanel(
@@ -287,7 +313,22 @@ namespace QoL
                     return;
                 }
 
+                string cardName = DisplayName(card);
+                string cardSprite = card.spritePath;
+                string boxName = DisplayName(box);
+
                 card.onItemTargetItemFunc(card, box); // 原版：消耗卡 + 解锁 + 音效
+
+                // 原版 TryOpenLock 遇到 lockId 不匹配时只播失败音，既不消耗也不解锁。
+                // 这里必须确认箱子真的开了，否则会出现「没开锁却看到箱内物品」。
+                if (LockHelper.IsCurrentlyLocked(box))
+                {
+                    QLog.Warn("[双击开锁] 用「" + cardName + "」(" + cardSprite + ") 开「" + boxName + "」失败，箱子仍是锁的");
+                    Notify("这张钥匙卡开不了这个箱子");
+                    return;
+                }
+
+                QLog.Info("[双击开锁] 用「" + cardName + "」(" + cardSprite + ") 打开了「" + boxName + "」");
 
                 if (box.contentWindow != null && ItemMouseDoubleClickHandler.current != null)
                 {
