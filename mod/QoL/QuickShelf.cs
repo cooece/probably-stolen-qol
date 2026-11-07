@@ -114,7 +114,7 @@ namespace QoL
                 CustomUIElement element = __instance != null ? __instance.Last : null;
                 if (element == null || element.input == null) return;
 
-                AttachCapture(element.input);
+                AttachCapture(element);
             }
             catch (Exception e)
             {
@@ -122,25 +122,58 @@ namespace QoL
             }
         }
 
-        private static void AttachCapture(TMP_InputField input)
+        private static void AttachCapture(CustomUIElement element)
         {
+            if (element == null) return;
+
+            TMP_InputField input = element.input;
             if (input == null) return;
 
-            // 只读：点击不再弹输入法，但仍然能被点中
-            input.readOnly = true;
-
-            // 旧配置里存的是 Mouse2 这种名字，显示成「鼠标中键」
-            string shown = KeyDisplayName(ParseKey(input.text));
-            if (input.text != shown) input.SetTextWithoutNotify(shown);
-
-            Button button = input.GetComponent<Button>();
-            if (button == null)
+            // 旧配置里存的是 Mouse2 这种名字，显示成「鼠标中键」。
+            // 每一步单独兜住：哪一步坏了都不会连累后面的，日志里能看出是哪一步。
+            try
             {
-                button = input.gameObject.AddComponent<Button>();
-                button.transition = Selectable.Transition.None;
+                string shown = KeyDisplayName(ParseKey(input.text));
+                if (shown != null && input.text != shown) input.SetTextWithoutNotify(shown);
             }
-            button.onClick.RemoveAllListeners();
-            button.onClick.AddListener(delegate { BeginCapture(input); });
+            catch (Exception e)
+            {
+                QLog.Warn("[一键上柜] 刷新改键框文字失败：" + e);
+            }
+
+            // 按钮挂在整行控件（root）上：点击命中的是这一行的背景图，
+            // 挂在输入框子物体上可能收不到点击。
+            try
+            {
+                GameObject host = element.root != null ? element.root : input.gameObject;
+                Button button = host.GetComponent<Button>();
+                if (button == null)
+                {
+                    button = host.AddComponent<Button>();
+                    button.transition = Selectable.Transition.None;
+                }
+                // 只追加，不清空：万一这一行原本就带按钮逻辑，别把它废掉
+                button.onClick.AddListener(delegate { BeginCapture(input); });
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[一键上柜] 给改键框挂点击失败，改用输入框自身事件：" + e);
+
+                // 退一步：用输入框自带的 onSelect（点击就会触发），不清空游戏原有监听
+                try
+                {
+                    input.onSelect.AddListener(delegate { BeginCapture(input); });
+                }
+                catch (Exception inner)
+                {
+                    QLog.Warn("[一键上柜] 改键框接管彻底失败，只能右键物品录制：" + inner);
+                    return;
+                }
+            }
+
+            // 放在最后：点击能用了才设只读，否则至少还能手动输入
+            try { input.readOnly = true; }
+            catch (Exception e) { QLog.Warn("[一键上柜] 设只读失败：" + e); }
 
             if (!_panelHooked)
             {
@@ -291,23 +324,41 @@ namespace QoL
         // 真正搬东西
         // ---------------------------------------------------------------
 
+        /// <summary>当前选的目标容器。默认前厅柜台（游戏里叫 FrontCounterGrid），可切到展示柜或后仓。</summary>
+        private static GameGridInventory TargetInventory()
+        {
+            EmporiumEntry store = EmporiumEntry.Instance;
+            if (store == null) return null;
+
+            QoLSettings settings = ModEntry.Settings;
+            string target = QoLSettings.ShelfTargetFront;
+            if (settings != null && settings.ShelfTarget != null && !string.IsNullOrEmpty(settings.ShelfTarget.Value))
+            {
+                target = settings.ShelfTarget.Value;
+            }
+
+            if (target == QoLSettings.ShelfTargetShowcase) return store.showcaseElement;
+            if (target == QoLSettings.ShelfTargetBack) return store.backInvinvElement;
+            return store.frontInvinvElement;
+        }
+
         private static void ShelfAll()
         {
             List<GameItem> targets = Collect();
             if (targets.Count == 0) return;
 
-            GameGridInventory showcase = null;
+            GameGridInventory destination = null;
             try
             {
-                showcase = EmporiumEntry.Instance.showcaseElement;
+                destination = TargetInventory();
             }
             catch (Exception e)
             {
-                QLog.Warn("[一键上柜] 取展示柜失败：" + e.Message);
+                QLog.Warn("[一键上柜] 取目标容器失败：" + e.Message);
                 return;
             }
 
-            if (showcase == null) return;
+            if (destination == null) return;
 
             int moved = 0;
             int skipped = 0;
@@ -320,10 +371,10 @@ namespace QoL
                 try
                 {
                     if (!GeneralHelper.IsItemOwned(item)) { skipped++; continue; }   // 还没买下来的东西不能上柜
-                    if (ReferenceEquals(item.parentInventory, showcase)) continue;     // 已经在柜台上，别白搬
+                    if (ReferenceEquals(item.parentInventory, destination)) continue;  // 已经在目标里，别白搬
                     if (!item.MayRemove()) { skipped++; continue; }
 
-                    int remain = GraphUtils.TryAcceptAll(showcase, item);
+                    int remain = GraphUtils.TryAcceptAll(destination, item);
                     if (remain <= 0) moved++;
                     else skipped++;
                 }

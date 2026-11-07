@@ -24,6 +24,11 @@ namespace QoL
 
         internal const string BoxSelectOff = "关闭";
 
+        // 一键上柜台的目标位置
+        internal const string ShelfTargetFront = "前厅柜台";
+        internal const string ShelfTargetShowcase = "展示柜（橱窗）";
+        internal const string ShelfTargetBack = "后仓";
+
         /// <summary>显示物品说明、厂商与操作提示。关掉只留名称和数值。</summary>
         internal ConfigEntry<bool> ShowItemDescription { get; }
 
@@ -77,6 +82,9 @@ namespace QoL
 
         /// <summary>一键上柜台：填按键名（Mouse2/Mouse3/F…），填「关闭」则停用。</summary>
         internal ConfigEntry<string> ShelfKey { get; }
+
+        /// <summary>一键上柜台：物品摆到哪（前厅柜台 / 展示柜 / 后仓）。</summary>
+        internal ConfigEntry<string> ShelfTarget { get; }
 
         /// <summary>调试面板：一个下拉同时管开关与自定义快捷键。</summary>
         internal ConfigEntry<string> DebugPanelMode { get; }
@@ -247,6 +255,14 @@ namespace QoL
                 () => "一键上柜台按键",
                 null,   // 不给下拉候选：任意按键都行，靠输入框点击录制
                 () => "点一下右边的框，再按你想用的键就自动认下（键盘键、鼠标中键、侧键都行）；按退格键则关闭这个功能。");
+
+            ShelfTarget = _config.Define(
+                "shelf.target",
+                ShelfTargetFront,
+                "框选",
+                () => "一键上柜台目标",
+                new[] { ShelfTargetFront, ShelfTargetShowcase, ShelfTargetBack },
+                () => "物品摆到哪个位置。前厅柜台＝店里顾客面前那条柜台；展示柜＝店外橱窗（吸引路人的那个）；后仓＝仓库货架。");
 
             // ---------------- 开发者 ----------------
             // 键名沿用旧版 dev.panel_hotkey，玩家已经选过的按键不会丢。
