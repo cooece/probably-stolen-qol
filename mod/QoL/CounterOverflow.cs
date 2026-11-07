@@ -247,25 +247,22 @@ namespace QoL
         {
             try
             {
-                if (_parked.Count == 0)
-                {
-                    _wasInStore = false;
-                    return;
-                }
-
                 bool inStore = CustomerInStore();
 
-                // 顾客刚离店：暂存区的货本来就没摆上柜台，立刻清掉。
-                // 绝不能在这个空档把货补到柜台上 —— 顾客已经走了，
-                // 这些「未拥有」的货留在柜台就会变成无主货，等于白送。
+                // 顾客刚离店：他自己的货要跟着走 —— 柜台上剩的未拥有物品 + 暂存区里的
+                // 全部清掉。原版只在夜间结算时清柜台，客人走了货会一直留在那儿，
+                // 看起来就像「没买下也归你了」。
                 if (_wasInStore && !inStore)
                 {
+                    ClearCounterLeftovers();
                     ClearParked();
                     _wasInStore = false;
                     return;
                 }
 
                 _wasInStore = inStore;
+
+                if (_parked.Count == 0) return;
 
                 // 顾客不在店就一律不补位，只等清理
                 if (!inStore)
@@ -332,6 +329,37 @@ namespace QoL
             catch
             {
                 return false;
+            }
+        }
+
+        /// <summary>
+        /// 清掉柜台上不属于玩家的残留货（= 上一位客人没卖掉的东西）。
+        /// 用原版自己的 ClearFrontInvNonOwned，只清未拥有，玩家自己的东西不动。
+        /// </summary>
+        private static void ClearCounterLeftovers()
+        {
+            try
+            {
+                EmporiumEntry store = EmporiumEntry.Instance;
+                if (store == null || store.frontInvinvElement == null) return;
+
+                int before = 0;
+                List<GameItem> items = store.frontInvinvElement.childItems;
+                for (int i = 0; i < items.Count; i++)
+                {
+                    GameItem item = items[i];
+                    if (item == null) continue;
+                    if (!GeneralHelper.IsItemOwned(item)) before++;
+                }
+
+                if (before <= 0) return;
+
+                store.ClearFrontInvNonOwned();
+                QLog.Info("[柜台溢出] 顾客离开，带走柜台上他自己剩下的 " + before + " 件货");
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[柜台溢出] 清理柜台残留失败：" + e.Message);
             }
         }
 
