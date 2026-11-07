@@ -172,37 +172,51 @@ namespace QoL
 
         internal static void Tick(float dt)
         {
-            // 批量标签面板开着时，由它自己轮询同步，这里不抢快捷键
-            BatchLabeler.Tick(dt);
-
-            if (!Enabled || !GameMaster.current)
+            // 批量标签是独立的轮询，先单独兜住，别让它连累快捷键处理
+            try
             {
-                return;
+                BatchLabeler.Tick(dt);
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[批量标签] 每帧执行失败：" + e.Message);
             }
 
-            // 处理按键录入捕获
-            if (_capturingGroup != null)
+            try
             {
-                PollCapture();
+                if (!Enabled || !GameMaster.current)
+                {
+                    return;
+                }
+
+                // 处理按键录入捕获
+                if (_capturingGroup != null)
+                {
+                    PollCapture();
+                }
+
+                // 长显提示刷新（设置快捷键期间的提示保持常显）
+                RefreshPersistentNotice();
+
+                ItemSelectHandler sel = ItemSelectHandler.current;
+                if (sel == null)
+                {
+                    return;
+                }
+
+                // 处理连续快速使用
+                if (_active)
+                {
+                    TickActiveUse(sel);
+                }
+
+                // 监听快捷键触发
+                CheckHotkeys(sel);
             }
-
-            // 长显提示刷新（设置快捷键期间的提示保持常显）
-            RefreshPersistentNotice();
-
-            ItemSelectHandler sel = ItemSelectHandler.current;
-            if (sel == null)
+            catch (Exception e)
             {
-                return;
+                QLog.Warn("[道具快捷键] 每帧执行失败：" + e.Message);
             }
-
-            // 处理连续快速使用
-            if (_active)
-            {
-                TickActiveUse(sel);
-            }
-
-            // 监听快捷键触发
-            CheckHotkeys(sel);
         }
 
         private static void CheckHotkeys(ItemSelectHandler sel)

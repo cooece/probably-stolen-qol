@@ -167,22 +167,54 @@ namespace QoL
 
         private static void UpdatePrefix(GameItem gameItem, ref int __state)
         {
-            __state = Snapshot(gameItem);
+            try
+            {
+                __state = Snapshot(gameItem);
+
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[水与容器标签] 补丁出错：" + e.Message);
+            }
         }
 
         private static void UpdatePostfix(GameItem gameItem, int __state)
         {
-            Sync(gameItem, __state);
+            try
+            {
+                Sync(gameItem, __state);
+
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[水与容器标签] 补丁出错：" + e.Message);
+            }
         }
 
         private static void ChangedPrefix(GameItem target, ref int __state)
         {
-            __state = Snapshot(target);
+            try
+            {
+                __state = Snapshot(target);
+
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[水与容器标签] 补丁出错：" + e.Message);
+            }
         }
 
         private static void ChangedPostfix(GameItem target, int __state)
         {
-            Sync(target, __state);
+            try
+            {
+                Sync(target, __state);
+
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[水与容器标签] 补丁出错：" + e.Message);
+            }
         }
 
         /// <summary>取「变更前」的实际水质。没有记录时从特征的真实条件推断。</summary>

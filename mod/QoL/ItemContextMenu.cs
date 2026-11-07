@@ -337,17 +337,33 @@ namespace QoL
 
         private static void UpdateSelectButtonColorPostfix(ItemContextHandler __instance, RichTextElement selectedButton)
         {
-            if (_menuState != null && _menuState.ActiveButtons.Count > 0)
+            try
             {
-                PaintButtons(_menuState, __instance, selectedButton);
+                if (_menuState != null && _menuState.ActiveButtons.Count > 0)
+                {
+                    PaintButtons(_menuState, __instance, selectedButton);
+                }
+
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[右键菜单] 补丁出错：" + e.Message);
             }
         }
 
         private static void ResetButtonColorPostfix(ItemContextHandler __instance)
         {
-            if (_menuState != null && _menuState.ActiveButtons.Count > 0)
+            try
             {
-                PaintButtons(_menuState, __instance, null);
+                if (_menuState != null && _menuState.ActiveButtons.Count > 0)
+                {
+                    PaintButtons(_menuState, __instance, null);
+                }
+
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[右键菜单] 补丁出错：" + e.Message);
             }
         }
 
@@ -396,28 +412,36 @@ namespace QoL
 
         private static void FindContextMenuNodePostfix(ItemContextHandler __instance, ref GameObject __result)
         {
-            if (__result != null || _menuState == null || _menuState.ActiveButtons.Count == 0)
+            try
             {
-                return;
-            }
-
-            Vector3 mouse = Input.mousePosition;
-            bool inside = IsInsideNode(_menuState.Window.handler, mouse);
-            if (!inside)
-            {
-                for (int i = 0; i < _menuState.ActiveButtons.Count; i++)
+                if (__result != null || _menuState == null || _menuState.ActiveButtons.Count == 0)
                 {
-                    if (IsInsideNode(_menuState.ActiveButtons[i].Element.handler, mouse))
+                    return;
+                }
+
+                Vector3 mouse = Input.mousePosition;
+                bool inside = IsInsideNode(_menuState.Window.handler, mouse);
+                if (!inside)
+                {
+                    for (int i = 0; i < _menuState.ActiveButtons.Count; i++)
                     {
-                        inside = true;
-                        break;
+                        if (IsInsideNode(_menuState.ActiveButtons[i].Element.handler, mouse))
+                        {
+                            inside = true;
+                            break;
+                        }
                     }
                 }
-            }
 
-            if (inside)
+                if (inside)
+                {
+                    __result = _menuState.Window.handler.gameObject;
+                }
+
+            }
+            catch (Exception e)
             {
-                __result = _menuState.Window.handler.gameObject;
+                QLog.Warn("[右键菜单] 补丁出错：" + e.Message);
             }
         }
 

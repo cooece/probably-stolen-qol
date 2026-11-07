@@ -342,16 +342,24 @@ namespace QoL
 
         private static void ButtonPostfix()
         {
-            GameItem machine = _buttonMachine;
-            _buttonMachine = null;
-            if (machine == null) return;
-
-            // 连续打印时重置展示计时，别刚装上就被还走
-            PendingReturn p;
-            if (Pending.TryGetValue(machine.uniqueId, out p) &&
-                p != null && p.Slot != null && p.Slot.childItem == p.Cell)
+            try
             {
-                p.At = Time.unscaledTime + ReturnDelay;
+                GameItem machine = _buttonMachine;
+                _buttonMachine = null;
+                if (machine == null) return;
+
+                // 连续打印时重置展示计时，别刚装上就被还走
+                PendingReturn p;
+                if (Pending.TryGetValue(machine.uniqueId, out p) &&
+                    p != null && p.Slot != null && p.Slot.childItem == p.Cell)
+                {
+                    p.At = Time.unscaledTime + ReturnDelay;
+                }
+
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[自动换电池] 补丁出错：" + e.Message);
             }
         }
 

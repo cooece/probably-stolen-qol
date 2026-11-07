@@ -118,15 +118,23 @@ namespace QoL
 
         internal static void Tick()
         {
-            if (!Enabled)
+            try
             {
-                Hide();
-                return;
-            }
+                if (!Enabled)
+                {
+                    Hide();
+                    return;
+                }
 
-            if (Time.unscaledTime < _nextRefresh) return;
-            _nextRefresh = Time.unscaledTime + RefreshInterval;
-            Refresh();
+                if (Time.unscaledTime < _nextRefresh) return;
+                _nextRefresh = Time.unscaledTime + RefreshInterval;
+                Refresh();
+            }
+            catch (Exception e)
+            {
+                // 读框选集合 / 建 UI 失败都只影响这一帧的统计，不能冒到每帧驱动
+                QLog.Warn("[框选统计] 每帧执行失败：" + e.Message);
+            }
         }
 
         private static void Refresh()

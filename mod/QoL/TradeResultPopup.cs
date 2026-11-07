@@ -144,69 +144,85 @@ namespace QoL
         /// <summary>每帧驱动延迟弹出的声望提示（由 QoLUpdate 调用）。</summary>
         internal static void Tick(float dt)
         {
-            // 整单金额：最后一次逐件结算后再静默一小会儿，把这一串成交合成一条合计。
-            if (_cashFlushTimer > 0f)
+            try
             {
-                _cashFlushTimer -= dt;
-                if (_cashFlushTimer <= 0f)
+                // 整单金额：最后一次逐件结算后再静默一小会儿，把这一串成交合成一条合计。
+                if (_cashFlushTimer > 0f)
                 {
-                    long cash = _pendingCash;
-                    _pendingCash = 0;
-                    if (cash != 0)
+                    _cashFlushTimer -= dt;
+                    if (_cashFlushTimer <= 0f)
                     {
-                        ReputationUIManager cashUi = ReputationUIManager.Instance;
-                        if (cashUi != null)
+                        long cash = _pendingCash;
+                        _pendingCash = 0;
+                        if (cash != 0)
                         {
-                            NotifyCash(cashUi, cash);
+                            ReputationUIManager cashUi = ReputationUIManager.Instance;
+                            if (cashUi != null)
+                            {
+                                NotifyCash(cashUi, cash);
+                            }
                         }
                     }
                 }
-            }
 
-            if (string.IsNullOrEmpty(_pendingRepFaction))
-            {
-                return;
-            }
-
-            _pendingRepTimer -= dt;
-            if (_pendingRepTimer > 0f)
-            {
-                return;
-            }
-
-            string faction = _pendingRepFaction;
-            double delta = _pendingRepDelta;
-            bool hasTrade = _pendingRepHasTrade;
-            _pendingRepFaction = null;
-            _pendingRepDelta = 0.0;
-            _pendingRepHasTrade = false;
-
-            string message = BuildRepMessage(faction, delta, hasTrade);
-            if (!string.IsNullOrEmpty(message))
-            {
-                ReputationUIManager ui = ReputationUIManager.Instance;
-                if (ui != null)
+                if (string.IsNullOrEmpty(_pendingRepFaction))
                 {
-                    ui.Notify(message);
+                    return;
                 }
+
+                _pendingRepTimer -= dt;
+                if (_pendingRepTimer > 0f)
+                {
+                    return;
+                }
+
+                string faction = _pendingRepFaction;
+                double delta = _pendingRepDelta;
+                bool hasTrade = _pendingRepHasTrade;
+                _pendingRepFaction = null;
+                _pendingRepDelta = 0.0;
+                _pendingRepHasTrade = false;
+
+                string message = BuildRepMessage(faction, delta, hasTrade);
+                if (!string.IsNullOrEmpty(message))
+                {
+                    ReputationUIManager ui = ReputationUIManager.Instance;
+                    if (ui != null)
+                    {
+                        ui.Notify(message);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                // 弹窗失败只影响这一条提示，不能让每帧驱动里的其他功能跟着停
+                QLog.Warn("[交易结果弹窗] 每帧执行失败：" + e.Message);
             }
         }
 
         private static void Prefix(string factionId)
         {
-            _repCaptured = false;
-            _repBefore = 0.0;
-
-            if (!Enabled || string.IsNullOrEmpty(factionId))
+            try
             {
-                return;
+                _repCaptured = false;
+                _repBefore = 0.0;
+
+                if (!Enabled || string.IsNullOrEmpty(factionId))
+                {
+                    return;
+                }
+
+                StoreReputation rep = StoreReputation.GetStoreReputation(factionId);
+                if (rep != null)
+                {
+                    _repBefore = rep.GetReputationExact();
+                    _repCaptured = true;
+                }
+
             }
-
-            StoreReputation rep = StoreReputation.GetStoreReputation(factionId);
-            if (rep != null)
+            catch (Exception e)
             {
-                _repBefore = rep.GetReputationExact();
-                _repCaptured = true;
+                QLog.Warn("[交易结果弹窗] 补丁出错：" + e.Message);
             }
         }
 
@@ -356,19 +372,27 @@ namespace QoL
 
         private static void RepPrefix(string factionId, int value)
         {
-            _repCaptured2 = false;
-            _repBefore2 = 0.0;
-
-            if (!Enabled || string.IsNullOrEmpty(factionId) || value == 0)
+            try
             {
-                return;
+                _repCaptured2 = false;
+                _repBefore2 = 0.0;
+
+                if (!Enabled || string.IsNullOrEmpty(factionId) || value == 0)
+                {
+                    return;
+                }
+
+                StoreReputation rep = StoreReputation.GetStoreReputation(factionId);
+                if (rep != null)
+                {
+                    _repBefore2 = rep.GetReputationExact();
+                    _repCaptured2 = true;
+                }
+
             }
-
-            StoreReputation rep = StoreReputation.GetStoreReputation(factionId);
-            if (rep != null)
+            catch (Exception e)
             {
-                _repBefore2 = rep.GetReputationExact();
-                _repCaptured2 = true;
+                QLog.Warn("[交易结果弹窗] 补丁出错：" + e.Message);
             }
         }
 

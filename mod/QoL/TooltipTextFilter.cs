@@ -141,22 +141,38 @@ namespace QoL
 
         private static void ShortDescriptionPostfix(ref string __result)
         {
-            if (!ShouldHideDescription())
+            try
             {
-                return;
-            }
+                if (!ShouldHideDescription())
+                {
+                    return;
+                }
 
-            __result = "";
+                __result = "";
+
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[提示框精简] 补丁出错：" + e.Message);
+            }
         }
 
         private static void FlavorTextPostfix(ref string __result)
         {
-            if (!ShouldHideDescription())
+            try
             {
-                return;
-            }
+                if (!ShouldHideDescription())
+                {
+                    return;
+                }
 
-            __result = "";
+                __result = "";
+
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[提示框精简] 补丁出错：" + e.Message);
+            }
         }
 
         private static bool ShouldHideDescription()
