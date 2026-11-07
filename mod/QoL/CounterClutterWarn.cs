@@ -76,6 +76,9 @@ namespace QoL
                 PlayerStore player = PlayerStore.Instance;
                 if (player == null || player.currentClientInstance == null) return;
 
+                // 只有「带东西来卖」的客人才会占柜台；纯买货、检查、对话这些不占
+                if (!IsSeller(player.currentClientInstance)) return;
+
                 if (Time.unscaledTime < _nextWarn) return;
 
                 EmporiumEntry store = EmporiumEntry.Instance;
@@ -96,6 +99,37 @@ namespace QoL
             catch (Exception e)
             {
                 QLog.Warn("[前台提醒] 检查失败：" + e.Message);
+            }
+        }
+
+        /// <summary>
+        /// 这位客人会不会往柜台上摆东西。
+        /// 他的货是到店后才逐件生成的，按铃这一刻拿不到件数，
+        /// 所以只能按意图判断：带东西来卖的才占柜台。
+        /// </summary>
+        private static bool IsSeller(StoreClientInstance client)
+        {
+            try
+            {
+                StoreClient blueprint = client.GetClientBlueprint();
+                if (blueprint == null) return true;
+
+                switch (blueprint.clientIntent)
+                {
+                    case StoreClient.ClientIntent.SELL:
+                    case StoreClient.ClientIntent.SELLNBUY:
+                    case StoreClient.ClientIntent.BARTER:
+                    case StoreClient.ClientIntent.PROCUREMENT_OFFER:
+                    case StoreClient.ClientIntent.GUNSMITH:
+                    case StoreClient.ClientIntent.EXPEDITION:
+                        return true;
+                    default:
+                        return false;
+                }
+            }
+            catch
+            {
+                return true; // 判断不了就按原来的方式走，宁可多提醒一次
             }
         }
 
