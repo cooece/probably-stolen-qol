@@ -85,6 +85,9 @@ namespace QoL
                 // 柜台溢出：外柜台有空位就把暂存的货补上（内部 0.5 秒限流）
                 CounterOverflow.Tick(dt);
 
+                // 前台提醒：柜台被杂物占满时持续弹气泡，直到清理出空间
+                CounterClutterWarn.Tick(dt);
+
                 // 全自动换电：统一队列补换机器电池（内部 0.2 秒限流）
                 AutoBatterySwap.Tick(dt);
 

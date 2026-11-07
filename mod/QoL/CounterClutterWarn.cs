@@ -23,11 +23,16 @@ namespace QoL
         /// <summary>剩余空格少到这个数就算「放不下下一批货」。</summary>
         private const int LowSpaceCells = 8;
 
-        /// <summary>提醒冷却，避免连续按铃刷屏。</summary>
-        private const float Cooldown = 20f;
+        /// <summary>
+        /// 重弹间隔。游戏气泡本身 3 秒收起（个别设置 6 秒），
+        /// 这里 2.5 秒补一次，看上去就是一直挂着，直到条件解除。
+        /// </summary>
+        private const float RecallInterval = 2.5f;
 
         private static Harmony _harmony;
-        private static float _nextWarn;
+
+        private static bool _reminding;
+        private static float _nextRecall;
 
         internal static void Apply()
         {
@@ -65,7 +70,8 @@ namespace QoL
             }
 
             _harmony = null;
-            _nextWarn = 0f;
+            _reminding = false;
+            _nextRecall = 0f;
         }
 
         private static void CallPostfix()
@@ -79,27 +85,74 @@ namespace QoL
                 // 只有「带东西来卖」的客人才会占柜台；纯买货、检查、对话这些不占
                 if (!IsSeller(player.currentClientInstance)) return;
 
-                if (Time.unscaledTime < _nextWarn) return;
+                int clutter;
+                int free;
+                if (!ConditionMet(out clutter, out free)) return;
 
-                EmporiumEntry store = EmporiumEntry.Instance;
-                if (store == null || store.frontInvinvElement == null) return;
-
-                GameGridInventory counter = store.frontInvinvElement;
-
-                int clutter = CountOwned(counter);
-                if (clutter <= 0) return;                 // 前台没自己的东西，不用提醒
-
-                int free = CountFreeCells(counter);
-                if (free >= LowSpaceCells) return;        // 还摆得下，不打扰
-
-                _nextWarn = Time.unscaledTime + Cooldown;
+                _reminding = true;
+                _nextRecall = Time.unscaledTime + RecallInterval;
                 Notify("前台有杂物，请及时清理");
-                QLog.Info("[前台提醒] 前台有 " + clutter + " 件自己的东西，只剩 " + free + " 格，已提示清理");
+                QLog.Info("[前台提醒] 前台有 " + clutter + " 件自己的东西，只剩 " + free + " 格，开始持续提醒");
             }
             catch (Exception e)
             {
                 QLog.Warn("[前台提醒] 检查失败：" + e.Message);
             }
+        }
+
+        /// <summary>
+        /// 提醒期间每 2.5 秒重弹一次，直到柜台腾出足够空间。
+        /// 顾客走了也停：这句提醒只在招呼客人时有意义。
+        /// </summary>
+        internal static void Tick(float dt)
+        {
+            if (!_reminding) return;
+
+            try
+            {
+                PlayerStore player = PlayerStore.Instance;
+                if (player == null || player.currentClientInstance == null)
+                {
+                    _reminding = false;
+                    return;
+                }
+
+                int clutter;
+                int free;
+                if (!ConditionMet(out clutter, out free))
+                {
+                    _reminding = false;
+                    QLog.Info("[前台提醒] 柜台腾出来了（剩 " + free + " 格），停止提醒");
+                    return;
+                }
+
+                if (Time.unscaledTime < _nextRecall) return;
+
+                _nextRecall = Time.unscaledTime + RecallInterval;
+                Notify("前台有杂物，请及时清理");
+            }
+            catch
+            {
+                _reminding = false;
+            }
+        }
+
+        /// <summary>前台有玩家自己的东西，且剩余空格不够摆下一批货。</summary>
+        private static bool ConditionMet(out int clutter, out int free)
+        {
+            clutter = 0;
+            free = 0;
+
+            EmporiumEntry store = EmporiumEntry.Instance;
+            if (store == null || store.frontInvinvElement == null) return false;
+
+            GameGridInventory counter = store.frontInvinvElement;
+
+            clutter = CountOwned(counter);
+            if (clutter <= 0) return false;          // 前台没自己的东西，不用提醒
+
+            free = CountFreeCells(counter);
+            return free < LowSpaceCells;             // 还摆得下就不打扰
         }
 
         /// <summary>
