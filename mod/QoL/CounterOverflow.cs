@@ -55,7 +55,9 @@ namespace QoL
             {
                 Harmony harmony = new Harmony(HarmonyId);
 
-                MethodInfo destroy = AccessTools.Method(typeof(GraphUtils), "DestroyIfUnplaced");
+                // 明确写签名：以后游戏给这个方法加重载时，不会因歧义静默失配
+                MethodInfo destroy = AccessTools.Method(typeof(GraphUtils), "DestroyIfUnplaced",
+                    new[] { typeof(GameItem), typeof(string) });
                 if (destroy != null)
                 {
                     harmony.Patch(destroy, prefix: new HarmonyMethod(typeof(CounterOverflow), nameof(DestroyPrefix)));
@@ -78,6 +80,12 @@ namespace QoL
                 }
 
                 _harmony = harmony;
+
+                // 读档 / 换场景时旧场景的暂存货和暂存网格都不能带过去，
+                // 否则会把上一局的顾客货补进新场景的柜台。
+                ModHook.OnGameLoadedInit -= ResetForScene;
+                ModHook.OnGameLoadedInit += ResetForScene;
+
                 QLog.Info("[柜台溢出] 已挂载：外柜台满时暂存，空位出现自动补上");
             }
             catch (Exception e)
@@ -89,6 +97,8 @@ namespace QoL
 
         internal static void Remove()
         {
+            ModHook.OnGameLoadedInit -= ResetForScene;
+
             try
             {
                 if (_harmony != null) _harmony.UnpatchAll(HarmonyId);
@@ -99,8 +109,14 @@ namespace QoL
             }
 
             _harmony = null;
+            ResetForScene();
+        }
+
+        private static void ResetForScene()
+        {
             ClearParked();
             _stash = null;
+            _wasInStore = false;
         }
 
         // ---------------------------------------------------------------
@@ -321,6 +337,10 @@ namespace QoL
         {
             try
             {
+                // 主菜单 / 场景外别碰 PlayerStore.Instance（那会抛空引用），
+                // 这是每帧调用的路径，不能靠「抛了再 catch」糊过去。
+                if (EmporiumEntry.Instance == null) return false;
+
                 // 用「当前有没有客人」判断，比 isClientArrived 可靠：
                 // 普通客人送走时只把 currentClientInstance 置空，不一定动 isClientArrived。
                 PlayerStore store = PlayerStore.Instance;

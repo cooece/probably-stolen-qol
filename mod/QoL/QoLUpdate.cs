@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace QoL
@@ -8,11 +9,39 @@ namespace QoL
     ///
     /// 游戏的 ModHook 是个挂在 DontDestroyOnLoad 对象上的 MonoBehaviour，
     /// 但模组自己不能直接收到 Update，所以这里造一个常驻 GameObject。
-    /// 需要轮询的功能（顾客对话、到店提示）都由它驱动，内部各自限流。
+    ///
+    /// 两条硬规则（吃过亏）：
+    ///   1. 读档期间（SaveManager.IsDecoding）整体停手，别在物品树重建时插一脚；
+    ///   2. 每个功能单独 try/catch —— 以前用一个大 try 包住全部 Tick，
+    ///      某个功能抛异常会让同帧后面的功能整段被跳过，症状极难定位。
     /// </summary>
     internal sealed class QoLUpdate : MonoBehaviour
     {
         private static QoLUpdate _instance;
+
+        /// <summary>静态委托表：只初始化一次，每帧循环调用，不产生额外分配。</summary>
+        private static readonly (string Name, Action<float> Run)[] Drivers =
+        {
+            ("顾客对话",       d => CustomerDialog.Tick(d)),
+            ("到店提示",       d => CustomerAlert.Tick(d)),
+            ("对话加速",       d => DialogueSpeedUp.Tick(d)),
+            ("真伪鉴定",       d => Authenticity.Tick(d)),
+            ("交易结果弹窗",   d => TradeResultPopup.Tick(d)),
+            ("估价客户",       d => AppraisalAuto.Tick()),
+            ("自动丢弃单据",   d => AutoDiscardDocs.Tick(d)),
+            ("需求高亮",       d => DemandHighlight.Tick()),
+            ("道具快捷键",     d => QuickToolHotkey.Tick(d)),
+            ("便捷框选",       d => QuickBoxSelect.Tick()),
+            ("框选统计",       d => SelectionCount.Tick()),
+            ("一键上柜台",     d => QuickShelf.Tick(d)),
+            ("柜台溢出",       d => CounterOverflow.Tick(d)),
+            ("前台杂物提醒",   d => CounterClutterWarn.Tick(d)),
+            ("全自动换电",     d => AutoBatterySwap.Tick(d)),
+            ("汉化调试面板",   d => DebugPanelZh.Tick()),
+        };
+
+        /// <summary>同一个功能报错 30 秒内只记一次，避免每帧刷日志。</summary>
+        private static readonly Dictionary<string, float> LastError = new Dictionary<string, float>();
 
         internal static void Ensure()
         {
@@ -36,69 +65,39 @@ namespace QoL
 
             UnityEngine.Object.Destroy(_instance.gameObject);
             _instance = null;
+            LastError.Clear();
         }
 
         private void Update()
         {
-            try
+            if (ModEntry.Settings == null) return;
+
+            // 读档期间物品树正在按 BFS 索引重建，任何创建/移动/销毁都要停
+            if (SaveManager.IsDecoding) return;
+
+            float dt = Time.unscaledDeltaTime;
+
+            for (int i = 0; i < Drivers.Length; i++)
             {
-                if (ModEntry.Settings == null)
+                var driver = Drivers[i];
+                try
                 {
-                    return;
+                    driver.Run(dt);
                 }
-
-                // 顾客相关：悬停对话、到店提示（内部各自限流，不用每帧干活）
-                float dt = Time.unscaledDeltaTime;
-                CustomerDialog.Tick(dt);
-                CustomerAlert.Tick(dt);
-
-                // 全局对话加速：按住空格极速快进 + 可选普通对话自动跳过
-                DialogueSpeedUp.Tick(dt);
-
-                // 真伪鉴定：谈判台面变化时自动揭穿（内部 0.5 秒限流）
-                Authenticity.Tick(dt);
-
-                // 交易结果弹窗：金额立即弹、声望 1.5 秒后弹（内部延迟队列）
-                TradeResultPopup.Tick(dt);
-
-                // 估价客户：自动填完美报价 + 自动批量提交（全自动，无需按键）
-                AppraisalAuto.Tick();
-
-                // 自动丢弃单据：5 类纸张统一移入垃圾桶（内部 1 秒限流）
-                AutoDiscardDocs.Tick(dt);
-
-                // 需求高亮：标出顾客想要的物品（内部惰性更新，没变化不跑）
-                DemandHighlight.Tick();
-
-                // 道具快捷键：按键捕获 + 跨容器自动递补使用
-                QuickToolHotkey.Tick(dt);
-
-                // 便捷框选：长按左键从物品上起拖框选（内部有位移阈值，不动就不干活）
-                QuickBoxSelect.Tick();
-
-                // 框选统计：把数量叠在收银机屏幕上，最多列 3 种（内部 0.1 秒限流）
-                SelectionCount.Tick();
-
-                // 一键上柜台：按绑定键把框选的 / 悬停的物品摆到展示柜
-                QuickShelf.Tick(dt);
-
-                // 柜台溢出：外柜台有空位就把暂存的货补上（内部 0.5 秒限流）
-                CounterOverflow.Tick(dt);
-
-                // 前台提醒：柜台被杂物占满时持续弹气泡，直到清理出空间
-                CounterClutterWarn.Tick(dt);
-
-                // 全自动换电：统一队列补换机器电池（内部 0.2 秒限流）
-                AutoBatterySwap.Tick(dt);
-
-                // F9 调试面板：汉化 + 自定义开关键（内部判空/限流）
-                DebugPanelZh.Tick();
-
+                catch (Exception e)
+                {
+                    ReportOnce(driver.Name, e);
+                }
             }
-            catch (Exception e)
-            {
-                QLog.Error("Update 出错", e);
-            }
+        }
+
+        private static void ReportOnce(string name, Exception e)
+        {
+            float now = Time.unscaledTime;
+            if (LastError.TryGetValue(name, out float last) && now - last < 30f) return;
+
+            LastError[name] = now;
+            QLog.Warn("[" + name + "] 每帧执行出错：" + e.GetType().Name + " " + e.Message);
         }
     }
 }

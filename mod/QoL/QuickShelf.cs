@@ -91,7 +91,8 @@ namespace QoL
         {
             try
             {
-                MethodInfo addInput = AccessTools.Method(typeof(CustomUIBuilder), "AddInput");
+                MethodInfo addInput = AccessTools.Method(typeof(CustomUIBuilder), "AddInput",
+                    new[] { typeof(string), typeof(string), typeof(Action<string>), typeof(string), typeof(Action<string>) });
                 if (addInput == null)
                 {
                     QLog.Warn("[一键上柜] 找不到 CustomUIBuilder.AddInput，设置面板里只能手动填按键名");

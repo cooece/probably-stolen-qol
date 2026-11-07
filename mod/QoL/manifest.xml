@@ -8,8 +8,9 @@
   ModVersion 模组版本（显示在游戏里的模组列表）
   GameVersions 适配的游戏版本，写 0.46D 这类
   Assemblies 要加载的 DLL 文件名，必须和实际文件名一致
-  Capabilities 申请的能力：本模组会写自己的日志和快捷键文件，所以要声明 files；
-            写入位置都在 AppData\LocalLow 下的 ModConfigs，不碰系统其他地方
+  Capabilities 申请的能力（漏声明会让玩家的「激活」静默失败）：
+            files               写自己的日志与快捷键文件（都在 AppData\LocalLow 下的 ModConfigs）
+            reflection-external 按名字取游戏对象的字段 / 闭包（换电定位电池槽、框选读选中集等）
 
   发布到创意工坊前，在游戏里跑一次 F8 控制台的 mod-scan local.qol，
   确认「检测到的能力」都被这里声明了，否则玩家启用时会被拒绝。

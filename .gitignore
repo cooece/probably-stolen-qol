@@ -30,3 +30,6 @@ workshop/fonts/
 workshop/Retro_futuristic_*.png
 workshop/Colorful_cartoon_*.png
 workshop/2D_game_cover_*.png
+
+# 临时反编译/截图产物
+.tmp/

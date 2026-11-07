@@ -31,10 +31,12 @@ copy /Y "%~dp0workshop\mask-blue.png" "%TARGET%\negociation_tablet_ScreenOverlay
 echo 遮罩：蓝色（本机 HUD 配色）
 
 :clean
-rem 加载器会拒绝文件夹里任何没写进 <Assemblies> 的 DLL（例如 *_local.dll、*.prev），
-rem 所以这里把除 QoL.dll 之外的动态库统一改成 .bak，既不影响加载也留个底。
-for %%F in ("%TARGET%\*.dll") do if /i not "%%~nxF"=="QoL.dll" ren "%%~fF" "%%~nF.bak" >nul 2>nul
-for %%F in ("%TARGET%\*.prev") do ren "%%~fF" "%%~nF.bak" >nul 2>nul
+rem 扫描器会把 manifest 没列出的可执行文件（含 .bak / .prev）判成多余内容，
+rem 所以一律移出模组目录，放到工作区备份，目录里不留任何残留。
+if not exist "%~dp0.backup\mod-dll" mkdir "%~dp0.backup\mod-dll" >nul 2>nul
+for %%F in ("%TARGET%\*.dll") do if /i not "%%~nxF"=="QoL.dll" move /Y "%%~fF" "%~dp0.backup\mod-dll\" >nul 2>nul
+for %%F in ("%TARGET%\*.prev") do move /Y "%%~fF" "%~dp0.backup\mod-dll\" >nul 2>nul
+for %%F in ("%TARGET%\*.bak") do move /Y "%%~fF" "%~dp0.backup\mod-dll\" >nul 2>nul
 
 echo 已部署到：%TARGET%
 if /i "%TARGET%"=="%PARK%\qol" echo 注意：本地副本现在在 _mods_off 里，属于停用状态；要启用请双击 test-switch.bat。
