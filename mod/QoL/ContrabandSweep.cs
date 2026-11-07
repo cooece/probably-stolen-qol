@@ -45,6 +45,7 @@ namespace QoL
         {
             Moved.Clear();
             Candidates.Clear();
+            Targets.Clear();
             Seen.Clear();
             _visit = null;
             _asked = false;
@@ -210,13 +211,19 @@ namespace QoL
             try
             {
                 EmporiumEntry store = EmporiumEntry.Instance;
-                if (store == null || store.hiddenElement == null)
+                if (store == null)
                 {
                     return;
                 }
 
                 Collect(store);
                 BuildTargets(store);
+
+                if (Targets.Count == 0)
+                {
+                    Notify("没有可用的安全容器（暗格或走私者暗格）");
+                    return;
+                }
 
                 int moved = 0;
                 int noSpace = 0;
@@ -280,7 +287,7 @@ namespace QoL
 
                 if (PosterPulled())
                 {
-                    message += "（海报还开着，暗格会被搜到）";
+                    message += "（海报开着，暗格没用，只收了走私舱）";
                 }
 
                 Notify(message);
@@ -403,10 +410,35 @@ namespace QoL
                 return false;
             }
 
+            // 玩家手上正拖着的别搬：挪走了拖拽处理器会握着一个空引用
+            if (IsBeingDragged(item))
+            {
+                return false;
+            }
+
             try
             {
                 return GeneralHelper.IsItemOwned(item) && item.MayRemove() &&
                        item.MaxNumRemove() >= item.unitCount;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool IsBeingDragged(GameItem item)
+        {
+            try
+            {
+                ItemMouseDragHandler drag = ItemMouseDragHandler.current;
+                if (drag != null && drag.IsDraggingItem && drag.GetCurrentItem() == item)
+                {
+                    return true;
+                }
+
+                ItemMultiSelectHandler multi = ItemMultiSelectHandler.current;
+                return multi != null && multi.IsGroupDraggingItem(item);
             }
             catch
             {
@@ -477,7 +509,9 @@ namespace QoL
         {
             Targets.Clear();
 
-            if (store.hiddenElement != null)
+            // 海报拉开时，检查员会搜暗格（StartInspection 里就是这么判断的），
+            // 这时候把东西塞进去等于白忙，直接用走私舱。
+            if (store.hiddenElement != null && !PosterPulled())
             {
                 Targets.Add(store.hiddenElement);
             }
