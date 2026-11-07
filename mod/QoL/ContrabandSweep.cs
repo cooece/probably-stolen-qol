@@ -18,6 +18,7 @@ namespace QoL
         {
             internal GameItem Item;
             internal GameInventory From;
+            internal GameInventory To;
             internal int X;
             internal int Y;
             internal int Orientation;
@@ -27,6 +28,7 @@ namespace QoL
 
         private static readonly List<Entry> Moved = new List<Entry>();
         private static readonly List<GameItem> Candidates = new List<GameItem>();
+        private static readonly List<GameInventory> Targets = new List<GameInventory>();
         private static readonly HashSet<GameItem> Seen = new HashSet<GameItem>();
 
         private static StoreClientInstance _visit;
@@ -54,21 +56,44 @@ namespace QoL
         {
             try
             {
-                EmporiumEntry store = EmporiumEntry.Instance;
-                PlayerStore player = PlayerStore.Instance;
+                // 主菜单/读档阶段 PlayerStore.Instance 会抛空引用（构造里建树失败），
+                // 所以先看店里有没有东西，再碰它。
+                EmporiumEntry store;
+                try
+                {
+                    store = EmporiumEntry.Instance;
+                }
+                catch
+                {
+                    store = null;
+                }
 
-                // 不在店里（主菜单/换场景）：记录作废，物品留在暗格不丢
-                if (store == null || player == null)
+                if (store == null)
                 {
                     if (Moved.Count > 0)
                     {
-                        QLog.Warn("[检查收纳] 场景已切换，放弃复原记录；" + Moved.Count + " 件仍放在暗格里");
+                        QLog.Warn("[检查收纳] 场景已切换，放弃复原记录；" + Moved.Count + " 件仍放在安全容器里");
                         Moved.Clear();
                         _restoreAt = -1f;
                     }
 
                     _visit = null;
                     _asked = false;
+                    return;
+                }
+
+                PlayerStore player;
+                try
+                {
+                    player = PlayerStore.Instance;
+                }
+                catch
+                {
+                    return;
+                }
+
+                if (player == null)
+                {
                     return;
                 }
 
@@ -190,9 +215,8 @@ namespace QoL
                     return;
                 }
 
-                GameGridInventory hidden = store.hiddenElement;
-
                 Collect(store);
+                BuildTargets(store);
 
                 int moved = 0;
                 int noSpace = 0;
@@ -202,13 +226,13 @@ namespace QoL
                 {
                     GameItem item = Candidates[i];
 
-                    // 已经跟着某个容器一起进了暗格，不算「没放好」
-                    if (AlreadyHidden(item, hidden))
+                    // 已经跟着某个容器一起进了暗格/走私舱，不算「没放好」
+                    if (AlreadyHidden(item))
                     {
                         continue;
                     }
 
-                    if (!CanMove(item, hidden))
+                    if (!CanMove(item))
                     {
                         skipped++;
                         continue;
@@ -221,7 +245,7 @@ namespace QoL
                         continue;
                     }
 
-                    if (Place(item, hidden))
+                    if (PlaceAnywhere(item, record))
                     {
                         Moved.Add(record);
                         moved++;
@@ -239,7 +263,7 @@ namespace QoL
                 string message;
                 if (moved > 0)
                 {
-                    message = "已把 " + moved + " 件违禁品/赃物收进暗格";
+                    message = "已把 " + moved + " 件违禁品/赃物藏进安全容器";
                     if (leftBehind)
                     {
                         message += "；有部分违禁品未安全存放，请手动处理";
@@ -360,15 +384,21 @@ namespace QoL
             return ContrabandHelper.IsContraband(item) ? 2 : 1;
         }
 
-        private static bool CanMove(GameItem item, GameInventory hidden)
+        private static bool CanMove(GameItem item)
         {
             if (item == null || item.parentInventory == null || item.unitCount <= 0)
             {
                 return false;
             }
 
-            // 已经跟着上一件东西进了暗格（容器连带内容物一起搬），别再单独掏出来
-            if (AlreadyHidden(item, hidden))
+            // 暗格/走私舱本身是目的地，不能搬
+            if (IsHiddenContainer(item))
+            {
+                return false;
+            }
+
+            // 已经跟着上一件东西进了暗格/走私舱（容器连带内容物一起搬），别再单独掏出来
+            if (AlreadyHidden(item))
             {
                 return false;
             }
@@ -384,21 +414,32 @@ namespace QoL
             }
         }
 
-        /// <summary>这件东西是否已经在暗格内部（可能隔着几层容器）。</summary>
-        private static bool AlreadyHidden(GameItem item, GameInventory hidden)
+        /// <summary>是不是「搜不到」的容器（走私者暗格三种规格）。</summary>
+        private static bool IsHiddenContainer(GameItem item)
         {
-            if (hidden == null)
+            try
+            {
+                return item.IsTag("ITEM_HIDDEN_TAG");
+            }
+            catch
             {
                 return false;
             }
+        }
 
-            GameInventory inventory = item.parentInventory;
+        /// <summary>这件东西是否已经躺在某个安全容器内部（可能隔着几层）。</summary>
+        private static bool AlreadyHidden(GameItem item)
+        {
+            GameInventory inventory = item != null ? item.parentInventory : null;
 
             for (int depth = 0; inventory != null && depth < 16; depth++)
             {
-                if (ReferenceEquals(inventory, hidden))
+                for (int i = 0; i < Targets.Count; i++)
                 {
-                    return true;
+                    if (ReferenceEquals(inventory, Targets[i]))
+                    {
+                        return true;
+                    }
                 }
 
                 GameItem owner = inventory.GetParentItem();
@@ -428,9 +469,149 @@ namespace QoL
             };
         }
 
-        private static bool Place(GameItem item, GameInventory hidden)
+        /// <summary>
+        /// 目的地顺序：海报后暗格（4 格）→ 走私者暗格（3×3 / 5×5 / 8×8，越大越靠前）。
+        /// 暗格放完剩下的自动往走私舱塞。
+        /// </summary>
+        private static void BuildTargets(EmporiumEntry store)
         {
-            SlotMarker slot = FindSlot(hidden, item);
+            Targets.Clear();
+
+            if (store.hiddenElement != null)
+            {
+                Targets.Add(store.hiddenElement);
+            }
+
+            AddBays(store.invElement);
+            AddBays(store.frontInvinvElement);
+            AddBays(store.backInvinvElement);
+            AddBays(store.showcaseElement);
+
+            // 大的先放，能少搬几趟
+            Targets.Sort(delegate (GameInventory a, GameInventory b)
+            {
+                return Capacity(b).CompareTo(Capacity(a));
+            });
+        }
+
+        /// <summary>暗格永远排第一，其余按容量从大到小。</summary>
+        private static int Capacity(GameInventory inventory)
+        {
+            EmporiumEntry store = EmporiumEntry.Instance;
+            if (store != null && ReferenceEquals(inventory, store.hiddenElement))
+            {
+                return int.MaxValue;
+            }
+
+            try
+            {
+                GameGridInventory grid = inventory as GameGridInventory;
+                GridShape shape = grid != null ? grid.inventoryShape : null;
+                if (shape == null)
+                {
+                    return 0;
+                }
+
+                return shape.globalWidth * shape.globalHeight;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private static void AddBays(GameInventory root)
+        {
+            if (root == null)
+            {
+                return;
+            }
+
+            List<GameItem> all;
+            try
+            {
+                all = GraphUtils.FindAllChildrenType<GameItem>(root, null, CanSearchInside);
+            }
+            catch
+            {
+                return;
+            }
+
+            for (int i = 0; i < all.Count; i++)
+            {
+                GameItem item = all[i];
+                if (item == null || !IsHiddenContainer(item))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    if (!GeneralHelper.IsItemOwned(item))
+                    {
+                        continue;
+                    }
+                }
+                catch
+                {
+                    continue;
+                }
+
+                GameInventory inner = InnerInventory(item);
+                if (inner == null)
+                {
+                    continue;
+                }
+
+                bool duplicate = false;
+                for (int k = 0; k < Targets.Count; k++)
+                {
+                    if (ReferenceEquals(Targets[k], inner))
+                    {
+                        duplicate = true;
+                        break;
+                    }
+                }
+
+                if (!duplicate)
+                {
+                    Targets.Add(inner);
+                }
+            }
+        }
+
+        private static GameInventory InnerInventory(GameItem item)
+        {
+            List<GameInventory> found;
+            try
+            {
+                found = GraphUtils.FindChildrenType<GameInventory>(item, null, null);
+            }
+            catch
+            {
+                return null;
+            }
+
+            for (int i = 0; i < found.Count; i++)
+            {
+                GameInventory inventory = found[i];
+                if (inventory == null)
+                {
+                    continue;
+                }
+
+                if (ReferenceEquals(inventory.GetParentItem(), item))
+                {
+                    return inventory;
+                }
+            }
+
+            return null;
+        }
+
+        private static bool Place(GameItem item, GameInventory target)
+        {
+            SlotMarker slot = FindSlot(target, item);
             if (slot == null)
             {
                 return false;
@@ -438,7 +619,29 @@ namespace QoL
 
             int count = item.unitCount;
             int accepted = slot.TryAcceptOnce(count);
-            return accepted == count && ReferenceEquals(item.parentInventory, hidden);
+            return accepted == count && ReferenceEquals(item.parentInventory, target);
+        }
+
+        private static bool PlaceAnywhere(GameItem item, Entry record)
+        {
+            for (int i = 0; i < Targets.Count; i++)
+            {
+                GameInventory target = Targets[i];
+
+                // 不能把容器塞进它自己
+                if (item != null && ReferenceEquals(target.GetParentItem(), item))
+                {
+                    continue;
+                }
+
+                if (Place(item, target))
+                {
+                    record.To = target;
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -519,7 +722,6 @@ namespace QoL
         {
             _restoreAt = -1f;
 
-            GameInventory hidden = store != null ? store.hiddenElement : null;
             int restored = 0;
             int kept = 0;
 
@@ -533,7 +735,7 @@ namespace QoL
 
                     // 玩家自己挪走了 / 已经卖掉用掉：不再管它
                     if (item == null || item.parentInventory == null ||
-                        (hidden != null && !ReferenceEquals(item.parentInventory, hidden)))
+                        (record.To != null && !ReferenceEquals(item.parentInventory, record.To)))
                     {
                         continue;
                     }
