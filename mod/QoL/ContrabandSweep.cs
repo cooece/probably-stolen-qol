@@ -44,6 +44,15 @@ namespace QoL
             QLog.Info("[检查收纳] 已启用：检查员到店时会问是否把违禁品收进暗格");
         }
 
+        private static bool Enabled
+        {
+            get
+            {
+                QoLSettings settings = ModEntry.Settings;
+                return settings != null && settings.SweepOnInspection.Value;
+            }
+        }
+
         internal static void Remove()
         {
             Moved.Clear();
@@ -113,7 +122,7 @@ namespace QoL
                         _restoreAt = -1f;
                     }
 
-                    if (_asked || Moved.Count > 0)
+                    if (_asked || Moved.Count > 0 || !Enabled)
                     {
                         return;
                     }

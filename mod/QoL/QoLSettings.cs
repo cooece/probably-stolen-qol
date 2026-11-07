@@ -65,6 +65,9 @@ namespace QoL
         /// <summary>需求高亮：彩色框线标出顾客想要的物品。</summary>
         internal ConfigEntry<bool> DemandHighlight { get; }
 
+        /// <summary>治安检查时一键把违禁品/赃物收进暗格与走私舱。</summary>
+        internal ConfigEntry<bool> SweepOnInspection { get; }
+
         /// <summary>容器内水质跨档变化后，自动把标签同步为真实水质。</summary>
         internal ConfigEntry<bool> WaterLabelSync { get; }
 
@@ -219,6 +222,14 @@ namespace QoL
                 "需求高亮",
                 () => "标出顾客想要的物品",
                 () => "顾客想要的物品加彩色框：绿＝想要、黄＝赃物、红＝违禁品。治安检查员来的时候，店里所有违禁品和赃物一律标红（锁着的箱子、暗格里的也算）；展示橱窗里的红色物品一直显示。");
+
+            // ---------------- 治安检查 ----------------
+            SweepOnInspection = _config.Define(
+                "sweep.on_inspection",
+                true,
+                "治安检查",
+                () => "检查时一键收纳",
+                () => "治安检查员到店时弹一句，问你要不要把违禁品和赃物收进暗格/走私舱；检查完自动放回原处。关掉就完全不插手。");
 
             // ---------------- 道具快捷键 ----------------
             // 绑定数据不走 ModConfig（否则会在设置页显示一个文本框），
