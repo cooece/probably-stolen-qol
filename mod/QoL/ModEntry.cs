@@ -63,6 +63,7 @@ namespace QoL
             ApplySafe("店内行情", CalendarPriceLine.Apply);
             ApplySafe("交易结果弹窗", TradeResultPopup.Apply);
             ApplySafe("需求高亮", DemandHighlight.Apply);
+            ApplySafe("检查收纳", ContrabandSweep.Apply);
             ApplySafe("水质标签", WaterLabelSync.Apply);
             // 道具快捷键内部会挂上右键菜单（ItemContextMenu）
             ApplySafe("道具快捷键", QuickToolHotkey.Apply);
@@ -102,6 +103,7 @@ namespace QoL
             RemoveSafe("对话加速", DialogueSpeedUp.Remove);
             RemoveSafe("交易结果弹窗", TradeResultPopup.Remove);
             RemoveSafe("需求高亮", DemandHighlight.Remove);
+            RemoveSafe("检查收纳", ContrabandSweep.Remove);
             RemoveSafe("水质标签", WaterLabelSync.Remove);
             RemoveSafe("汉化调试面板", DebugPanelZh.Remove);
             RemoveSafe("店内行情", CalendarPriceLine.Remove);

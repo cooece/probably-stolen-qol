@@ -30,6 +30,7 @@ namespace QoL
             ("估价客户",       d => AppraisalAuto.Tick()),
             ("自动丢弃单据",   d => AutoDiscardDocs.Tick(d)),
             ("需求高亮",       d => DemandHighlight.Tick()),
+            ("检查收纳",       d => ContrabandSweep.Tick(d)),
             ("道具快捷键",     d => QuickToolHotkey.Tick(d)),
             ("便捷框选",       d => QuickBoxSelect.Tick()),
             ("框选统计",       d => SelectionCount.Tick()),
