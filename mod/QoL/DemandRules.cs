@@ -173,6 +173,7 @@ namespace QoL
             Visited = Computed = 0;
             walk++;
             client = current;
+            kind = default;
             clientGoods = highlightClientGoods;
 
             EmporiumEntry instance = EmporiumEntry.Instance;
@@ -195,9 +196,7 @@ namespace QoL
                 return false;
             }
 
-            if (client != epochClient || kind.Inspector != epochKind.Inspector ||
-                kind.Buying != epochKind.Buying || kind.Selling != epochKind.Selling ||
-                clientGoods != epochGoods)
+            if (client != epochClient || !SameKind(kind, epochKind) || clientGoods != epochGoods)
             {
                 ForgetAll();
                 epochClient = client;
@@ -210,17 +209,85 @@ namespace QoL
             clock.Reset();
             clock.Start();
 
-            complete &= Root(instance.invElement);
-            complete &= Root(instance.frontInvinvElement);
-            complete &= Root(instance.backInvinvElement);
-            complete &= Root(instance.backInvinvElementCounter);
-            complete &= Root(instance.showcaseElement);
-            complete &= Root(instance.bazarLeftinvElement);
-            complete &= Root(instance.hiddenElement);
-            complete &= Root(instance.soldElement);
+            complete &= Root(instance.invElement, false);
+            complete &= Root(instance.frontInvinvElement, false);
+            complete &= Root(instance.backInvinvElement, false);
+            complete &= Root(instance.backInvinvElementCounter, false);
+            complete &= Root(instance.showcaseElement, true);
+            complete &= Root(instance.bazarLeftinvElement, false);
+            complete &= Root(instance.hiddenElement, false);
+            complete &= Root(instance.soldElement, false);
 
             clock.Stop();
             return true;
+        }
+
+        /// <summary>
+        /// 违禁扫描：只标违禁品与赃物，一律红色。
+        /// allRoots = true 时按游戏的检查范围扫（前厅/后仓/物品栏/橱窗/暗格/垃圾桶），
+        /// allRoots = false 时只扫展示橱窗（没有顾客时也要一直显示）。
+        /// </summary>
+        internal static bool WalkIllegal(bool allRoots, out bool complete)
+        {
+            complete = true;
+            Hits.Clear();
+            Tabs.Clear();
+            nodesSeen.Clear();
+            Visited = Computed = 0;
+            walk++;
+            client = null;
+            clientGoods = false;
+            kind = default;
+            kind.Illegal = true;
+
+            EmporiumEntry instance = EmporiumEntry.Instance;
+            if (instance == null)
+            {
+                return false;
+            }
+
+            if (!SameKind(kind, epochKind) || epochClient != null || epochGoods)
+            {
+                ForgetAll();
+                epochClient = null;
+                epochKind = kind;
+                epochGoods = false;
+            }
+
+            outOfTime = false;
+            sinceCheck = 0;
+            clock.Reset();
+            clock.Start();
+
+            if (allRoots)
+            {
+                // 与 ContrabandHelper.StartInspection 的搜索范围一致：检查员翻哪儿，我们就标哪儿
+                complete &= Root(instance.invElement, false);
+                complete &= Root(instance.frontInvinvElement, false);
+                complete &= Root(instance.backInvinvElement, false);
+                complete &= Root(instance.showcaseElement, true);
+                complete &= Root(instance.hiddenElement, false);
+                complete &= Root(instance.trashInvElement, false);
+            }
+            else
+            {
+                complete &= Root(instance.showcaseElement, true);
+            }
+
+            clock.Stop();
+            return true;
+        }
+
+        /// <summary>当前顾客是不是治安检查员（安全检察员 / 伪装的检查员）。</summary>
+        internal static bool IsInspector(StoreClient c)
+        {
+            return c != null && (int)c.clientIntent == 4;
+        }
+
+        private static bool SameKind(DemandKind a, DemandKind b)
+        {
+            return a.Inspector == b.Inspector && a.Buying == b.Buying &&
+                   a.Selling == b.Selling && a.Illegal == b.Illegal;
         }
 
         internal static DemandStyle StyleOf(GameItem item)
@@ -233,7 +300,7 @@ namespace QoL
             return value.Style;
         }
 
-        private static bool Root(GameInventory inventory)
+        private static bool Root(GameInventory inventory, bool showcase)
         {
             if (inventory == null || !nodesSeen.Add(inventory))
             {
@@ -251,7 +318,7 @@ namespace QoL
             {
                 if (childItems[i] != null)
                 {
-                    complete &= Item(childItems[i], 0, false, false, true).Complete;
+                    complete &= Item(childItems[i], 0, false, false, true, showcase).Complete;
                 }
             }
 
@@ -275,7 +342,8 @@ namespace QoL
             return outOfTime;
         }
 
-        private static Up Item(GameItem item, int depth, bool lockedAbove, bool blockedAbove, bool shown)
+        private static Up Item(GameItem item, int depth, bool lockedAbove, bool blockedAbove,
+            bool shown, bool showcase)
         {
             if (!entries.TryGetValue(item, out Entry value))
             {
@@ -303,7 +371,7 @@ namespace QoL
                     return up;
                 }
 
-                ComputeSelf(item, value);
+                ComputeSelf(item, value, showcase);
             }
 
             bool opened = shown && IsOpened(item);
@@ -331,7 +399,7 @@ namespace QoL
                     Children(item.children, depth + 1,
                         lockedAbove || value.F.Locked,
                         blockedAbove || value.F.BlocksSearch,
-                        opened, ref inside, ref allBought, ref complete);
+                        opened, showcase, ref inside, ref allBought, ref complete);
                     insideComplete = complete;
 
                     if (complete)
@@ -364,18 +432,18 @@ namespace QoL
                     Hits.Add(new Hit { Element = element, Style = style });
                 }
 
-                if (opened)
+                if (opened && !kind.Illegal)
                 {
                     FindTabs(item);
                 }
             }
 
-            up.Agg = DemandDecide.Report(self, inside, value.F);
+            up.Agg = DemandDecide.Report(kind.Illegal, self, inside, value.F);
             value.Last = up;
             return up;
         }
 
-        private static void ComputeSelf(GameItem item, Entry e)
+        private static void ComputeSelf(GameItem item, Entry e, bool showcase)
         {
             Computed++;
             e.Epoch = epoch;
@@ -387,6 +455,7 @@ namespace QoL
             f.Immovable = IsImmovable(item);
             f.BlocksSearch = kind.Inspector && ContrabandHelper.IsBlockSearchContainer(item);
             f.Owned = GeneralHelper.IsItemOwned(item);
+            f.InShowcase = showcase;
 
             if (kind.Buying)
             {
@@ -399,7 +468,7 @@ namespace QoL
         }
 
         private static void Children(List<GraphNodeStorage> nodes, int depth,
-            bool lockedAbove, bool blockedAbove, bool shown,
+            bool lockedAbove, bool blockedAbove, bool shown, bool showcase,
             ref DemandAgg inside, ref bool allBought, ref bool complete)
         {
             if (nodes == null)
@@ -418,7 +487,7 @@ namespace QoL
                 GameItem item = node as GameItem;
                 if (item != null)
                 {
-                    Up up = Item(item, depth, lockedAbove, blockedAbove, shown);
+                    Up up = Item(item, depth, lockedAbove, blockedAbove, shown, showcase);
                     if (!up.Complete)
                     {
                         complete = false;
@@ -431,7 +500,7 @@ namespace QoL
                 }
                 else if (depth < MaxDepth && nodesSeen.Add(node))
                 {
-                    Children(node.children, depth + 1, lockedAbove, blockedAbove, shown,
+                    Children(node.children, depth + 1, lockedAbove, blockedAbove, shown, showcase,
                         ref inside, ref allBought, ref complete);
                 }
             }

@@ -30,6 +30,7 @@ namespace QoL
 
         private static StoreClient _lastClient;
         private static bool _warned;
+        private static bool _lastInspector;
 
         private static bool Enabled
         {
@@ -154,6 +155,7 @@ namespace QoL
 
             _drawn = false;
             _lastClient = null;
+            _lastInspector = false;
         }
 
         private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
@@ -266,6 +268,7 @@ namespace QoL
                 }
 
                 _lastClient = null;
+                _lastInspector = false;
                 return;
             }
 
@@ -273,6 +276,15 @@ namespace QoL
             {
                 float now = Time.unscaledTime;
                 StoreClient client = DemandRules.CurrentClient();
+                bool inspector = DemandRules.IsInspector(client);
+
+                if (inspector != _lastInspector)
+                {
+                    _lastInspector = inspector;
+                    QLog.Info(inspector
+                        ? "[需求高亮] 检测到治安检查：标出全部违禁品与赃物"
+                        : "[需求高亮] 治安检查结束：恢复常规高亮");
+                }
 
                 if (client != _lastClient)
                 {
@@ -281,7 +293,8 @@ namespace QoL
                     _nextAllowed = 0f;
                 }
 
-                if (client != null && now >= _nextIntentPoll)
+                // 检查员既不买也不卖，不用轮询意图
+                if (client != null && !inspector && now >= _nextIntentPoll)
                 {
                     _nextIntentPoll = now + IntentPoll;
                     int intent = DemandRules.Intent(client);
@@ -292,40 +305,48 @@ namespace QoL
                     }
                 }
 
-                if (client == null)
+                if (!_dirty || now < _nextAllowed)
                 {
-                    if (_drawn)
-                    {
-                        DemandPainter.HideAll();
-                        _drawn = false;
-                    }
-
-                    _dirty = false;
+                    return;
                 }
-                else if (_dirty && now >= _nextAllowed)
+
+                _dirty = false;
+                _nextAllowed = now + MinGap;
+
+                bool complete = true;
+                bool painted;
+
+                if (inspector)
                 {
-                    _dirty = false;
-                    _nextAllowed = now + MinGap;
+                    // 治安检查：把店里所有违禁品/赃物标红（含锁箱、暗格里的）
+                    painted = DemandRules.WalkIllegal(true, out complete);
+                }
+                else
+                {
+                    painted = client != null && DemandRules.Walk(client, false, out complete);
 
-                    bool complete;
-                    bool walked = DemandRules.Walk(client, false, out complete);
+                    if (!painted)
+                    {
+                        // 没顾客、或顾客只是聊天：只保留展示橱窗里的红色标记
+                        painted = DemandRules.WalkIllegal(false, out complete);
+                    }
+                }
 
-                    if (walked)
-                    {
-                        DemandPainter.Paint(complete);
-                        _drawn = true;
-                    }
-                    else if (_drawn)
-                    {
-                        DemandPainter.HideAll();
-                        _drawn = false;
-                    }
+                if (painted)
+                {
+                    DemandPainter.Paint(complete);
+                    _drawn = true;
+                }
+                else if (_drawn)
+                {
+                    DemandPainter.HideAll();
+                    _drawn = false;
+                }
 
-                    if (!complete)
-                    {
-                        _dirty = true;
-                        _nextAllowed = 0f;
-                    }
+                if (!complete)
+                {
+                    _dirty = true;
+                    _nextAllowed = 0f;
                 }
             }
             catch (Exception e)

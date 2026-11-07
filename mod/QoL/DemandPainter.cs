@@ -87,9 +87,15 @@ namespace QoL
             plates.Clear();
         }
 
-        private static Color ColorOf(DemandMark mark)
+        private static Color ColorOf(DemandStyle style)
         {
-            switch (mark)
+            // Alarm：检查/橱窗警告一律用红，图案仍按 Mark 区分（违禁实线、赃物斜纹）。
+            if (style.Alarm)
+            {
+                return Red;
+            }
+
+            switch (style.Mark)
             {
                 case DemandMark.Stolen:
                     return Amber;
@@ -292,7 +298,7 @@ namespace QoL
 
         private static void Finish(Frame frame, DemandStyle style, float mirror)
         {
-            frame.Image.color = ColorOf(style.Mark);
+            frame.Image.color = ColorOf(style);
             frame.Rect.localScale = new Vector3(mirror, 1f, 1f);
             frame.Style = style;
             frame.Generation = DemandSprites.Generation;

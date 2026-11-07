@@ -21,6 +21,9 @@ namespace QoL
         internal bool Buying;
         internal bool Selling;
         internal bool Inspector;
+
+        /// <summary>违禁扫描模式：不管顾客想买什么，只把违禁品/赃物标出来。</summary>
+        internal bool Illegal;
     }
 
     internal struct DemandAgg
@@ -39,6 +42,9 @@ namespace QoL
         internal bool Immovable;
         internal bool BlocksSearch;
         internal bool Owned;
+
+        /// <summary>这件东西在展示橱窗里：违禁/赃物要一直标红，不受顾客与检查状态影响。</summary>
+        internal bool InShowcase;
     }
 
     internal struct DemandStyle
@@ -46,15 +52,19 @@ namespace QoL
         internal DemandMark Mark;
         internal bool Contents;
 
-        internal DemandStyle(DemandMark mark, bool contents)
+        /// <summary>一律用红色画（检查/橱窗警告）。图案仍按 Mark 区分：违禁实线框、赃物斜纹带。</summary>
+        internal bool Alarm;
+
+        internal DemandStyle(DemandMark mark, bool contents, bool alarm = false)
         {
             Mark = mark;
             Contents = mark != DemandMark.None && contents;
+            Alarm = mark != DemandMark.None && alarm;
         }
 
         internal bool Equals(DemandStyle other)
         {
-            return Mark == other.Mark && Contents == other.Contents;
+            return Mark == other.Mark && Contents == other.Contents && Alarm == other.Alarm;
         }
 
         internal static DemandStyle Max(DemandStyle a, DemandStyle b)
@@ -64,7 +74,7 @@ namespace QoL
                 return (byte)a.Mark <= (byte)b.Mark ? b : a;
             }
 
-            return new DemandStyle(a.Mark, a.Contents && b.Contents);
+            return new DemandStyle(a.Mark, a.Contents && b.Contents, a.Alarm || b.Alarm);
         }
     }
 
@@ -100,16 +110,27 @@ namespace QoL
                 }
             }
 
-            if (kind.Inspector || (kind.Selling && clientGoods))
-            {
-                result.Illegal = f.Illegal;
-            }
+            // 非法标记始终向上汇总：橱窗里的「装着违禁品的箱子」也要能被标出来。
+            // 只有 Inspector / Illegal 两类会真的把它画成红色（见 Display）。
+            result.Illegal = f.Illegal;
 
             return result;
         }
 
-        internal static DemandAgg Report(DemandAgg self, DemandAgg inside, DemandFacts f)
+        /// <summary>
+        /// 把「自己的非法标记」和「内容物里的非法标记」合成一个结论。
+        /// deep = 违禁扫描：锁着的、藏在暗格里的也照样算（检查员本来就能翻出来）。
+        /// </summary>
+        internal static DemandAgg Report(bool deep, DemandAgg self, DemandAgg inside, DemandFacts f)
         {
+            if (deep)
+            {
+                DemandAgg all = self;
+                all.Buyer = Max(all.Buyer, inside.Buyer);
+                all.Illegal = Max(all.Illegal, inside.Illegal);
+                return all;
+            }
+
             DemandAgg result = !f.BehindLock ? self : default;
             if (!f.Locked)
             {
@@ -126,6 +147,33 @@ namespace QoL
         internal static DemandStyle Display(DemandKind kind, bool clientGoods,
             DemandFacts f, DemandAgg self, DemandAgg inside, bool lockedAbove, bool blockedAbove)
         {
+            // 违禁扫描（治安检查）：不看顾客想要什么，只看「违禁/赃物」，一律红色。
+            // 这里刻意不看 lockedAbove / BehindLock / Locked —— 藏在箱子、暗格里的才是要标出来的。
+            if (kind.Illegal)
+            {
+                if (self.Illegal != DemandMark.None)
+                {
+                    return new DemandStyle(self.Illegal, false, true);
+                }
+
+                return new DemandStyle(inside.Illegal, true, true);
+            }
+
+            // 展示橱窗里的违禁/赃物：任何时候都标红（不受顾客去留、检查状态影响）。
+            // 装在橱窗容器里的也一并标出来（用角括号表示「在里面」）。
+            if (f.InShowcase)
+            {
+                if (self.Illegal != DemandMark.None)
+                {
+                    return new DemandStyle(self.Illegal, false, true);
+                }
+
+                if (inside.Illegal != DemandMark.None)
+                {
+                    return new DemandStyle(inside.Illegal, true, true);
+                }
+            }
+
             if (lockedAbove || f.BehindLock || f.Immovable)
             {
                 return default;
