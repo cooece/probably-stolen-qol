@@ -41,6 +41,7 @@ namespace QoL
 
         private static float _nextFill;
         private static float _lastActivity;
+        private static bool _wasInStore;
 
         // ---------------------------------------------------------------
         // 挂载
@@ -246,12 +247,30 @@ namespace QoL
         {
             try
             {
-                if (_parked.Count == 0) return;
+                if (_parked.Count == 0)
+                {
+                    _wasInStore = false;
+                    return;
+                }
 
-                // 顾客走了、柜台也不补了：这些货本来就没摆上柜台，清掉免得变成孤儿对象
-                if (!CustomerInStore() && Time.unscaledTime - _lastActivity > IdleClearDelay)
+                bool inStore = CustomerInStore();
+
+                // 顾客刚离店：暂存区的货本来就没摆上柜台，立刻清掉。
+                // 绝不能在这个空档把货补到柜台上 —— 顾客已经走了，
+                // 这些「未拥有」的货留在柜台就会变成无主货，等于白送。
+                if (_wasInStore && !inStore)
                 {
                     ClearParked();
+                    _wasInStore = false;
+                    return;
+                }
+
+                _wasInStore = inStore;
+
+                // 顾客不在店就一律不补位，只等清理
+                if (!inStore)
+                {
+                    if (Time.unscaledTime - _lastActivity > IdleClearDelay) ClearParked();
                     return;
                 }
 
@@ -305,8 +324,10 @@ namespace QoL
         {
             try
             {
+                // 用「当前有没有客人」判断，比 isClientArrived 可靠：
+                // 普通客人送走时只把 currentClientInstance 置空，不一定动 isClientArrived。
                 PlayerStore store = PlayerStore.Instance;
-                return store != null && store.isClientArrived;
+                return store != null && store.currentClientInstance != null;
             }
             catch
             {
