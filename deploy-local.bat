@@ -3,15 +3,18 @@ rem °Ñ×îĞÂ¹¹½¨²¿Êğµ½ÓÎÏ·ÀïµÄ±¾µØ¸±±¾£¬²¢°ÑÕÚÕÖ»»³É¡¾À¶É«¡¿£¨ÅäºÏ HUD ÃÀ»¯Ä£×é£©¡
 rem ·¢²¼µ½¹¤·»µÄ°üÓÃµÄÊÇÔ­°æÃ×»ÆÕÚÕÖ£¬Á½Õß»¥²»Ó°Ïì¡£
 rem ÓÃ·¨£ºÏÈÅÜ package.bat£¬ÔÙË«»÷±¾ÎÄ¼ş£»Ö®ºóÆô¶¯ÓÎÏ·¡£
 
-set "MODDIR=C:\Program Files (x86)\Steam\steamapps\common\Probably Stolen\Mods"
+set "GAME=C:\Program Files (x86)\Steam\steamapps\common\Probably Stolen"
+set "MODDIR=%GAME%\Mods"
+set "PARK=%GAME%\_mods_off"
 set "SRC=%~dp0dist\workshop"
 set "TARGET="
 
 if not exist "%SRC%\QoL.dll" goto :nobuild
 
-if exist "%MODDIR%\qol_local" set "TARGET=%MODDIR%\qol_local"
-if not defined TARGET if exist "%MODDIR%\qol" set "TARGET=%MODDIR%\qol"
-if not defined TARGET goto :notarget
+if exist "%MODDIR%\qol" set "TARGET=%MODDIR%\qol"
+if not defined TARGET if exist "%PARK%\qol" set "TARGET=%PARK%\qol"
+if not defined TARGET set "TARGET=%MODDIR%\qol"
+if not exist "%TARGET%" mkdir "%TARGET%"
 
 tasklist /fi "imagename eq Probably Stolen.exe" 2>nul | find /i "Probably Stolen.exe" >nul
 if not errorlevel 1 goto :running
@@ -33,7 +36,8 @@ rem ËùÒÔÕâÀï°Ñ³ı QoL.dll Ö®ÍâµÄ¶¯Ì¬¿âÍ³Ò»¸Ä³É .bak£¬¼È²»Ó°Ïì¼ÓÔØÒ²Áô¸öµ×¡£
 for %%F in ("%TARGET%\*.dll") do if /i not "%%~nxF"=="QoL.dll" ren "%%~fF" "%%~nF.bak" >nul 2>nul
 for %%F in ("%TARGET%\*.prev") do ren "%%~fF" "%%~nF.bak" >nul 2>nul
 
-echo ÒÑ²¿Êğµ½±¾µØ¸±±¾£º%TARGET%
+echo ÒÑ²¿Êğµ½£º%TARGET%
+if /i "%TARGET%"=="%PARK%\qol" echo ×¢Òâ£º±¾µØ¸±±¾ÏÖÔÚÔÚ _mods_off Àï£¬ÊôÓÚÍ£ÓÃ×´Ì¬£»ÒªÆôÓÃÇëË«»÷ test-switch.bat¡£
 goto :end
 
 :running
@@ -42,10 +46,6 @@ goto :end
 
 :nobuild
 echo ÕÒ²»µ½ dist\workshop\QoL.dll£¬ÏÈÔËĞĞ package.bat¡£
-goto :end
-
-:notarget
-echo ÕÒ²»µ½ Mods\qol »ò Mods\qol_local£¬¼ì²éÓÎÏ·Ä¿Â¼¡£
 goto :end
 
 :end
