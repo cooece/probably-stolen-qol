@@ -1,0 +1,352 @@
+using System;
+using System.Collections.Generic;
+using System.Reflection;
+using HarmonyLib;
+using UnityEngine;
+
+namespace QoL
+{
+    /// <summary>
+    /// 柜台溢出：原版在「外柜台摆满」时会把后面本可购买的商品直接丢掉 ——
+    /// 物品版走 <c>GraphUtils.DestroyIfUnplaced(..., "front counter full")</c> 销毁，
+    /// 字符串版连实例都不创建（只记一笔 unplacedCounts 就跳过）。
+    ///
+    /// 这里做两件事，都在后台，不开设置项：
+    ///   1. 柜台满时把要丢的货先收进一个私有暂存网格，不销毁；
+    ///   2. 柜台一有空位就自动把暂存货搬回柜台，让顾客还能看到、还能买。
+    ///
+    /// 不重建物品：救回来的是原来的那一件，品质、违禁、偷窃、含水全都保留。
+    /// 顾客离开后暂存区里还没补上的货按原版规则清掉（它们本来就没摆上柜台）。
+    /// </summary>
+    internal static class CounterOverflow
+    {
+        private const string HarmonyId = "local.qol.counter_overflow";
+
+        /// <summary>只接管原版标记为「外柜台满」的丢弃，其他场景的销毁一概不碰。</summary>
+        private const string ContextMarker = "front counter full";
+
+        /// <summary>暂存区尺寸：够放一整批客人的货。</summary>
+        private const int StashSize = 20;
+
+        /// <summary>补位节流（秒）：别每帧都尝试搬，柜台上也可能正被玩家摆东西。</summary>
+        private const float FillInterval = 0.5f;
+
+        /// <summary>顾客离开后多久清空暂存（秒）：留点余量，避免到店瞬间误判。</summary>
+        private const float IdleClearDelay = 6f;
+
+        private static Harmony _harmony;
+
+        private static readonly List<GameItem> _parked = new List<GameItem>();
+        private static GameGridInventory _stash;
+
+        private static float _nextFill;
+        private static float _lastActivity;
+
+        // ---------------------------------------------------------------
+        // 挂载
+        // ---------------------------------------------------------------
+
+        internal static void Apply()
+        {
+            if (_harmony != null) return;
+
+            try
+            {
+                Harmony harmony = new Harmony(HarmonyId);
+
+                MethodInfo destroy = AccessTools.Method(typeof(GraphUtils), "DestroyIfUnplaced");
+                if (destroy != null)
+                {
+                    harmony.Patch(destroy, prefix: new HarmonyMethod(typeof(CounterOverflow), nameof(DestroyPrefix)));
+                }
+                else
+                {
+                    QLog.Warn("[柜台溢出] 找不到 GraphUtils.DestroyIfUnplaced，物品版丢弃无法拦截");
+                }
+
+                MethodInfo sellString = AccessTools.Method(
+                    typeof(PlayerStore), "TryAddDirectSellingItemToTable",
+                    new[] { typeof(string), typeof(bool), typeof(bool), typeof(bool), typeof(int) });
+                if (sellString != null)
+                {
+                    harmony.Patch(sellString, prefix: new HarmonyMethod(typeof(CounterOverflow), nameof(DirectSellStringPrefix)));
+                }
+                else
+                {
+                    QLog.Warn("[柜台溢出] 找不到 TryAddDirectSellingItemToTable(string)，跳过版丢弃无法拦截");
+                }
+
+                _harmony = harmony;
+                QLog.Info("[柜台溢出] 已挂载：外柜台满时暂存，空位出现自动补上");
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[柜台溢出] 挂载失败：" + e);
+                _harmony = null;
+            }
+        }
+
+        internal static void Remove()
+        {
+            try
+            {
+                if (_harmony != null) _harmony.UnpatchAll(HarmonyId);
+            }
+            catch
+            {
+                // 卸载阶段出错无所谓
+            }
+
+            _harmony = null;
+            ClearParked();
+            _stash = null;
+        }
+
+        // ---------------------------------------------------------------
+        // 拦截点 1：物品放不下 → 原版要销毁，我们收走
+        // ---------------------------------------------------------------
+
+        private static bool DestroyPrefix(object[] __args)
+        {
+            try
+            {
+                if (__args == null || __args.Length < 2) return true;
+
+                GameItem item = __args[0] as GameItem;
+                string context = __args[1] as string;
+
+                if (item == null) return true;
+                if (item.parentInventory != null) return true;                       // 已经放进容器了
+                if (string.IsNullOrEmpty(context)) return true;
+                if (context.IndexOf(ContextMarker, StringComparison.OrdinalIgnoreCase) < 0) return true;
+
+                if (!Park(item)) return true;                                         // 收不下就交回原版
+
+                QLog.Info("[柜台溢出] 柜满了，先收好「" + DisplayName(item) + "」，有空位再补");
+                return false;                                                        // 不执行销毁
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[柜台溢出] 销毁拦截出错：" + e.Message);
+                return true;
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // 拦截点 2：柜台满时原版连实例都不造，我们造出来收走
+        // ---------------------------------------------------------------
+
+        private static bool DirectSellStringPrefix(object[] __args)
+        {
+            try
+            {
+                if (__args == null || __args.Length < 1) return true;
+
+                string identifier = __args[0] as string;
+                if (string.IsNullOrEmpty(identifier)) return true;
+
+                EmporiumEntry store = EmporiumEntry.Instance;
+                if (store == null || store.frontInvinvElement == null) return true;
+
+                // 柜台还放得下 → 完全交给原版
+                if (store.frontInvinvElement.CanTakeAnything()) return true;
+
+                // 用和原版完全相同的创建方式（原版字符串版内部就是 DirectoryMaster.Item），
+                // 这样货的品质、随机属性、许可证登记都和「没被跳过」时一致。
+                GameItem item = DirectoryMaster.Item(identifier);
+                if (item == null) return true;
+
+                bool owned = __args.Length > 1 && __args[1] is bool b && b;
+                bool stolen = __args.Length > 2 && __args[2] is bool s && s;
+                int heat = __args.Length > 4 && __args[4] is int h ? h : 0;
+
+                GeneralHelper.SetItemOwned(item, owned);
+
+                if (stolen)
+                {
+                    try
+                    {
+                        if (PlayerStore.Instance != null && PlayerStore.Instance.isStolenItemIntroduced)
+                        {
+                            StolenHelper.InitStolenItem(item, heat);
+                        }
+                    }
+                    catch
+                    {
+                        // 偷窃标记不是主流程，失败就继续
+                    }
+                }
+
+                if (!Park(item))
+                {
+                    item.Destroy();
+                    return true;
+                }
+
+                QLog.Info("[柜台溢出] 柜台放不下「" + DisplayName(item) + "」，已先收好");
+                return false;
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[柜台溢出] 跳过拦截出错：" + e.Message);
+                return true;
+            }
+        }
+
+        // ---------------------------------------------------------------
+        // 暂存
+        // ---------------------------------------------------------------
+
+        private static bool Park(GameItem item)
+        {
+            if (item == null) return false;
+
+            GameGridInventory stash = EnsureStash();
+            if (stash == null) return false;
+
+            try
+            {
+                int left = GraphUtils.TryAcceptAll(stash, item);
+                if (left > 0) return false;
+
+                _parked.Add(item);
+                _lastActivity = Time.unscaledTime;
+                return true;
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[柜台溢出] 暂存失败：" + e.Message);
+                return false;
+            }
+        }
+
+        /// <summary>私有暂存网格：不挂窗口、不进存档，只在本场景里临时放东西。</summary>
+        private static GameGridInventory EnsureStash()
+        {
+            if (_stash != null) return _stash;
+
+            try
+            {
+                _stash = new GameGridInventory(StashSize, StashSize);
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[柜台溢出] 创建暂存区失败：" + e.GetType().Name + " " + e.Message);
+                _stash = null;
+            }
+
+            return _stash;
+        }
+
+        // ---------------------------------------------------------------
+        // 每帧：有空位就补上
+        // ---------------------------------------------------------------
+
+        internal static void Tick(float dt)
+        {
+            try
+            {
+                if (_parked.Count == 0) return;
+
+                // 顾客走了、柜台也不补了：这些货本来就没摆上柜台，清掉免得变成孤儿对象
+                if (!CustomerInStore() && Time.unscaledTime - _lastActivity > IdleClearDelay)
+                {
+                    ClearParked();
+                    return;
+                }
+
+                if (Time.unscaledTime < _nextFill) return;
+                _nextFill = Time.unscaledTime + FillInterval;
+
+                EmporiumEntry store = EmporiumEntry.Instance;
+                if (store == null || store.frontInvinvElement == null) return;
+                if (!store.frontInvinvElement.CanTakeAnything()) return;
+
+                int filled = 0;
+                for (int i = _parked.Count - 1; i >= 0; i--)
+                {
+                    GameItem item = _parked[i];
+                    if (item == null)
+                    {
+                        _parked.RemoveAt(i);
+                        continue;
+                    }
+
+                    try
+                    {
+                        int left = GraphUtils.TryAcceptAll(store.frontInvinvElement, item);
+                        if (left <= 0)
+                        {
+                            _parked.RemoveAt(i);
+                            filled++;
+                            _lastActivity = Time.unscaledTime;
+                        }
+                    }
+                    catch (Exception e)
+                    {
+                        QLog.Warn("[柜台溢出] 补位失败：" + e.Message);
+                    }
+
+                    if (filled >= 4) break;   // 一次别搬太多，避免一帧卡顿
+                }
+
+                if (filled > 0)
+                {
+                    QLog.Info("[柜台溢出] 柜台空出来了，补上 " + filled + " 件（还剩 " + _parked.Count + " 件等着）");
+                }
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[柜台溢出] 每帧检查出错：" + e.Message);
+            }
+        }
+
+        private static bool CustomerInStore()
+        {
+            try
+            {
+                PlayerStore store = PlayerStore.Instance;
+                return store != null && store.isClientArrived;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void ClearParked()
+        {
+            if (_parked.Count == 0) return;
+
+            int count = _parked.Count;
+            for (int i = 0; i < _parked.Count; i++)
+            {
+                try
+                {
+                    if (_parked[i] != null) _parked[i].Destroy();
+                }
+                catch
+                {
+                    // 单个销毁失败不影响其他
+                }
+            }
+
+            _parked.Clear();
+            QLog.Info("[柜台溢出] 顾客已离开，清掉 " + count + " 件没来得及补位的货");
+        }
+
+        private static string DisplayName(GameItem item)
+        {
+            try
+            {
+                if (item == null) return "?";
+                string name = item.GetDisplayName();
+                return string.IsNullOrEmpty(name) ? "?" : name;
+            }
+            catch
+            {
+                return "?";
+            }
+        }
+    }
+}

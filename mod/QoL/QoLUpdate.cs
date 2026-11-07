@@ -82,6 +82,9 @@ namespace QoL
                 // 一键上柜台：按绑定键把框选的 / 悬停的物品摆到展示柜
                 QuickShelf.Tick(dt);
 
+                // 柜台溢出：外柜台有空位就把暂存的货补上（内部 0.5 秒限流）
+                CounterOverflow.Tick(dt);
+
                 // 全自动换电：统一队列补换机器电池（内部 0.2 秒限流）
                 AutoBatterySwap.Tick(dt);
 

@@ -88,6 +88,9 @@ namespace QoL
                 // 双击开锁：双击带锁的物资箱，自动用身上的钥匙卡打开
                 QuickUnlock.Apply();
 
+                // 柜台溢出：外柜台摆满时原版会丢货，这里先收着，有空位再补上
+                CounterOverflow.Apply();
+
                 // 开发者工具：汉化 F9 调试面板 + 自定义开关键
                 DebugPanelZh.Apply();
 
@@ -114,6 +117,7 @@ namespace QoL
             QuickBoxSelect.Remove();
             QuickShelf.Remove();
             QuickUnlock.Remove();
+            CounterOverflow.Remove();
             SelectionCount.Remove();
             DialogueSpeedUp.Remove();
             TradeResultPopup.Remove();
