@@ -63,82 +63,98 @@ namespace QoL
 
         internal static void Apply()
         {
-            if (_harmony != null)
+            try
             {
-                return;
+                if (_harmony != null)
+                {
+                    return;
+                }
+
+                _harmony = new Harmony(HarmonyId);
+
+                var method = typeof(StoreReputation).GetMethod("OnItemTraded",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (method == null)
+                {
+                    Debug.LogWarning(ModEntry.Tag + "交易结果弹窗：找不到 OnItemTraded");
+                    return;
+                }
+
+                // 金额必须取第 3 个参数 originalValue（= playerCash 实际增减的数额）。
+                // 第 2 个参数 value 是声望基数，会被阵营/外交倍率改写，不是钱。
+                // 参数名对不上时 Harmony 会静默传 0，这里提前发现，避免游戏更新后金额恒为 0。
+                var tradeParams = method.GetParameters();
+                if (tradeParams.Length < 3 || tradeParams[2].Name != "originalValue")
+                {
+                    Debug.LogWarning(ModEntry.Tag + "交易结果弹窗：OnItemTraded 参数签名变了，金额可能不准，请检查");
+                }
+
+                _harmony.Patch(method,
+                    prefix: new HarmonyMethod(typeof(TradeResultPopup), nameof(Prefix)),
+                    postfix: new HarmonyMethod(typeof(TradeResultPopup), nameof(Postfix)));
+
+                // 估价客户鉴定结算：GiveAppraisalFee 直接 playerCash += 佣金，不走 OnItemTraded，
+                // 所以单独拦截，鉴定完也弹"支付宝到账"。
+                var feeMethod = typeof(AppraisalServiceHelper).GetMethod("GiveAppraisalFee",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
+                if (feeMethod != null)
+                {
+                    _harmony.Patch(feeMethod,
+                        prefix: new HarmonyMethod(typeof(TradeResultPopup), nameof(FeePrefix)),
+                        postfix: new HarmonyMethod(typeof(TradeResultPopup), nameof(FeePostfix)));
+                }
+
+                // 其他所有阵营声望变化（治安部罚款、小纸条举报、任务奖励、革命军/黑市等）：
+                // 都汇聚到 StoreReputation.ModReputation(string, int, bool)。用前后差值弹出带数字的声望。
+                var repMethod = typeof(StoreReputation).GetMethod("ModReputation",
+                    new[] { typeof(string), typeof(int), typeof(bool) });
+                if (repMethod != null)
+                {
+                    _harmony.Patch(repMethod,
+                        prefix: new HarmonyMethod(typeof(TradeResultPopup), nameof(RepPrefix)),
+                        postfix: new HarmonyMethod(typeof(TradeResultPopup), nameof(RepPostfix)));
+                }
+
+                // 现金统一入口 ModCash：罚款、房租、任务奖励、彩票、售货机等所有扣款/收款。
+                var cashMethod = typeof(PlayerStore).GetMethod("ModCash",
+                    System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
+                if (cashMethod != null)
+                {
+                    _harmony.Patch(cashMethod,
+                        prefix: new HarmonyMethod(typeof(TradeResultPopup), nameof(CashPrefix)));
+                }
+
+                Debug.Log(ModEntry.Tag + "交易结果弹窗已挂载");
+        
             }
-
-            _harmony = new Harmony(HarmonyId);
-
-            var method = typeof(StoreReputation).GetMethod("OnItemTraded",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-            if (method == null)
+            catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "交易结果弹窗：找不到 OnItemTraded");
-                return;
+                QLog.Warn("[交易结果弹窗] 补丁出错：" + e.Message);
             }
-
-            // 金额必须取第 3 个参数 originalValue（= playerCash 实际增减的数额）。
-            // 第 2 个参数 value 是声望基数，会被阵营/外交倍率改写，不是钱。
-            // 参数名对不上时 Harmony 会静默传 0，这里提前发现，避免游戏更新后金额恒为 0。
-            var tradeParams = method.GetParameters();
-            if (tradeParams.Length < 3 || tradeParams[2].Name != "originalValue")
-            {
-                Debug.LogWarning(ModEntry.Tag + "交易结果弹窗：OnItemTraded 参数签名变了，金额可能不准，请检查");
-            }
-
-            _harmony.Patch(method,
-                prefix: new HarmonyMethod(typeof(TradeResultPopup), nameof(Prefix)),
-                postfix: new HarmonyMethod(typeof(TradeResultPopup), nameof(Postfix)));
-
-            // 估价客户鉴定结算：GiveAppraisalFee 直接 playerCash += 佣金，不走 OnItemTraded，
-            // 所以单独拦截，鉴定完也弹"支付宝到账"。
-            var feeMethod = typeof(AppraisalServiceHelper).GetMethod("GiveAppraisalFee",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-            if (feeMethod != null)
-            {
-                _harmony.Patch(feeMethod,
-                    prefix: new HarmonyMethod(typeof(TradeResultPopup), nameof(FeePrefix)),
-                    postfix: new HarmonyMethod(typeof(TradeResultPopup), nameof(FeePostfix)));
-            }
-
-            // 其他所有阵营声望变化（治安部罚款、小纸条举报、任务奖励、革命军/黑市等）：
-            // 都汇聚到 StoreReputation.ModReputation(string, int, bool)。用前后差值弹出带数字的声望。
-            var repMethod = typeof(StoreReputation).GetMethod("ModReputation",
-                new[] { typeof(string), typeof(int), typeof(bool) });
-            if (repMethod != null)
-            {
-                _harmony.Patch(repMethod,
-                    prefix: new HarmonyMethod(typeof(TradeResultPopup), nameof(RepPrefix)),
-                    postfix: new HarmonyMethod(typeof(TradeResultPopup), nameof(RepPostfix)));
-            }
-
-            // 现金统一入口 ModCash：罚款、房租、任务奖励、彩票、售货机等所有扣款/收款。
-            var cashMethod = typeof(PlayerStore).GetMethod("ModCash",
-                System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
-            if (cashMethod != null)
-            {
-                _harmony.Patch(cashMethod,
-                    prefix: new HarmonyMethod(typeof(TradeResultPopup), nameof(CashPrefix)));
-            }
-
-            Debug.Log(ModEntry.Tag + "交易结果弹窗已挂载");
         }
 
         internal static void Remove()
         {
-            if (_harmony != null)
+            try
             {
-                _harmony.UnpatchAll(HarmonyId);
-                _harmony = null;
-            }
+                if (_harmony != null)
+                {
+                    _harmony.UnpatchAll(HarmonyId);
+                    _harmony = null;
+                }
 
-            _pendingRepFaction = null;
-            _pendingRepDelta = 0.0;
-            _pendingRepHasTrade = false;
-            _pendingRepTimer = 0f;
-            _pendingCash = 0;
-            _cashFlushTimer = 0f;
+                _pendingRepFaction = null;
+                _pendingRepDelta = 0.0;
+                _pendingRepHasTrade = false;
+                _pendingRepTimer = 0f;
+                _pendingCash = 0;
+                _cashFlushTimer = 0f;
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[交易结果弹窗] 补丁出错：" + e.Message);
+            }
         }
 
         /// <summary>每帧驱动延迟弹出的声望提示（由 QoLUpdate 调用）。</summary>
@@ -328,7 +344,15 @@ namespace QoL
 
         private static void FeePrefix()
         {
-            _cashBeforeFee = PlayerStore.Instance != null ? PlayerStore.Instance.playerCash : 0;
+            try
+            {
+                _cashBeforeFee = PlayerStore.Instance != null ? PlayerStore.Instance.playerCash : 0;
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[交易结果弹窗] 补丁出错：" + e.Message);
+            }
         }
 
         private static void FeePostfix()

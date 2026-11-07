@@ -289,6 +289,24 @@ namespace QoL
                 }
 
                 store.TryPlayerDismissCurrentClient(true);
+
+                // 驱赶是同步的：顾客被 tryInterceptDismiss 拦下时 currentClientInstance 不会清空。
+                // 不校验就打「已跳过」，会让玩家以为送走了，实际上人还站着。
+                if (store.currentClientInstance != null)
+                {
+                    Debug.Log(ModEntry.Tag + "顾客拒绝了驱赶（tryInterceptDismiss）");
+                    try
+                    {
+                        ReputationUIManager ui = ReputationUIManager.Instance;
+                        if (ui != null) ui.Notify("这位客人不肯离开");
+                    }
+                    catch
+                    {
+                        // 气泡失败不影响流程
+                    }
+                    return;
+                }
+
                 Debug.Log(ModEntry.Tag + "已跳过未击杀的改造体");
             }
             catch (Exception e)

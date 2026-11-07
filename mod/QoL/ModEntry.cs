@@ -22,122 +22,126 @@ namespace QoL
         public void Init(ModManifest manifest)
         {
             // Init 时只是拿到清单信息，游戏本体还没准备好，别在这里碰游戏对象。
-            if (manifest != null && !string.IsNullOrEmpty(manifest.ID))
+            try
             {
-                ModId = manifest.ID;
-            }
+                if (manifest != null && !string.IsNullOrEmpty(manifest.ID))
+                {
+                    ModId = manifest.ID;
+                }
 
-            string ver = manifest != null ? manifest.ModVersion : "?";
-            QLog.Init();
-            QLog.Info("Init，ID=" + ModId + "，版本=" + ver);
+                string ver = manifest != null ? manifest.ModVersion : "?";
+                QLog.Init();
+                QLog.Info("Init，ID=" + ModId + "，版本=" + ver);
+            }
+            catch (Exception e)
+            {
+                Debug.LogError(Tag + "Init 失败：" + e);
+            }
         }
 
         public void OnEnable()
         {
-            try
-            {
-                Settings = new QoLSettings(ModId);
-                QLog.DumpEnvironment();
-                QoLUpdate.Ensure();
+            // 每个功能单独兜住：
+            // 以前用一个 try 包住全部 Apply，任何一个抛异常，后面所有功能都不挂载，
+            // 而且日志里只看得到「OnEnable 失败」，根本不知道是哪一个。
+            try { Settings = new QoLSettings(ModId); }
+            catch (Exception e) { QLog.Error("设置项加载失败", e); }
 
-                // 功能一：物品分类彩色标签
-                ItemTypeBadge.Apply();
+            try { QLog.DumpEnvironment(); }
+            catch (Exception e) { QLog.Warn("打印环境信息失败：" + e.Message); }
 
-                // 功能二：精简提示框文字（去掉长描述）
-                TooltipTextFilter.Apply();
+            try { QoLUpdate.Ensure(); }
+            catch (Exception e) { QLog.Error("每帧驱动启动失败", e); }
 
-                // 功能三：悬停顾客查看本次对话
-                CustomerDialog.Apply();
+            ApplySafe("物品分类标签", ItemTypeBadge.Apply);
+            ApplySafe("提示框精简", TooltipTextFilter.Apply);
+            ApplySafe("顾客对话", CustomerDialog.Apply);
+            ApplySafe("到店提示", CustomerAlert.Apply);
+            ApplySafe("对话加速", DialogueSpeedUp.Apply);
+            ApplySafe("摇铃确认", CustomerSkipConfirm.Apply);
+            ApplySafe("打烊确认", ShutterConfirm.Apply);
+            ApplySafe("店内行情", CalendarPriceLine.Apply);
+            ApplySafe("交易结果弹窗", TradeResultPopup.Apply);
+            ApplySafe("需求高亮", DemandHighlight.Apply);
+            ApplySafe("水质标签", WaterLabelSync.Apply);
+            // 道具快捷键内部会挂上右键菜单（ItemContextMenu）
+            ApplySafe("道具快捷键", QuickToolHotkey.Apply);
+            ApplySafe("便捷框选", QuickBoxSelect.Apply);
+            ApplySafe("一键上柜台", QuickShelf.Apply);
+            ApplySafe("双击开锁", QuickUnlock.Apply);
+            ApplySafe("柜台溢出", CounterOverflow.Apply);
+            ApplySafe("前台提醒", CounterClutterWarn.Apply);
+            ApplySafe("汉化调试面板", DebugPanelZh.Apply);
+            ApplySafe("荧光莓品质徽标", delegate { BerryBadge.Apply(Settings); });
+            ApplySafe("自动换电", AutoBatterySwap.Apply);
 
-                // 功能四：通缉犯/改造体顾客到店提示
-                CustomerAlert.Apply();
+            try { ModHook.OnCreateTooltipLate += OnTooltipLate; }
+            catch (Exception e) { QLog.Error("订阅提示框钩子失败", e); }
 
-                // 全局对话加速：所有角色说话打字与停顿加速，长按空格极速快进
-                DialogueSpeedUp.Apply();
-
-                // 功能五：未击杀改造体时摇铃，先弹确认框
-                CustomerSkipConfirm.Apply();
-
-                // 功能六：柜台顾客没谈完时打烊，先弹通用确认框
-                ShutterConfirm.Apply();
-
-                // 功能七：店内显示器上追加今日行情（涨红跌绿）
-                CalendarPriceLine.Apply();
-
-                // 提示框生成到最后一步时，追加真伪鉴定结论
-                ModHook.OnCreateTooltipLate += OnTooltipLate;
-
-                // 交易结果弹窗：成交后显示声望/金钱增减
-                TradeResultPopup.Apply();
-
-                // 需求高亮：彩色框线标出顾客想要的物品
-                DemandHighlight.Apply();
-
-                // 水质变化后同步容器标签（净化 / 混合 / 加注 / 蒸发后自动改标签）
-                WaterLabelSync.Apply();
-
-                // 道具快捷键：右键菜单绑定快捷键 + 跨容器快速拿起连发使用
-                QuickToolHotkey.Apply();
-
-                // 便捷框选：满容器也能长按左键从物品上拉出框选框
-                QuickBoxSelect.Apply();
-
-                // 一键上柜台：按绑定键把框选 / 悬停的物品摆到展示柜
-                QuickShelf.Apply();
-
-                // 双击开锁：双击带锁的物资箱，自动用身上的钥匙卡打开
-                QuickUnlock.Apply();
-
-                // 柜台溢出：外柜台摆满时原版会丢货，这里先收着，有空位再补上
-                CounterOverflow.Apply();
-
-                // 前台提醒：按铃叫到人时，前台被自己的杂物占满就提示清理
-                CounterClutterWarn.Apply();
-
-                // 开发者工具：汉化 F9 调试面板 + 自定义开关键
-                DebugPanelZh.Apply();
-
-                // 荧光莓品质徽标：图标右上角标出酿酒分数（+2/+1/+0/-1）
-                BerryBadge.Apply(Settings);
-
-                // 全自动换电：周期型机器常驻补换 + 主动工具按按钮时装填、用完取回
-                AutoBatterySwap.Apply();
-
-                QLog.Info("已启用：" + Settings.Count + " 项设置，配置文件 " + Settings.FilePath + "，日志路径 " + QLog.LogFilePath);
-            }
-            catch (Exception e)
-            {
-                // 模组抛异常不要让它冒出去，否则可能连累游戏主循环。
-                QLog.Error("OnEnable 失败", e);
-            }
+            QLog.Info("已启用：" + (Settings != null ? Settings.Count : 0) + " 项设置，配置文件 " +
+                      (Settings != null ? Settings.FilePath : "?") + "，日志路径 " + QLog.LogFilePath);
         }
 
         public void OnDisable()
         {
-            ModHook.OnCreateTooltipLate -= OnTooltipLate;
-            AutoBatterySwap.Remove();
-            QuickToolHotkey.Remove();
-            QuickBoxSelect.Remove();
-            QuickShelf.Remove();
-            QuickUnlock.Remove();
-            CounterOverflow.Remove();
-            CounterClutterWarn.Remove();
-            SelectionCount.Remove();
-            DialogueSpeedUp.Remove();
-            TradeResultPopup.Remove();
-            DemandHighlight.Remove();
-            WaterLabelSync.Remove();
-            DebugPanelZh.Remove();
-            CalendarPriceLine.Remove();
-            ShutterConfirm.Remove();
-            CustomerSkipConfirm.Remove();
-            CustomerAlert.Remove();
-            CustomerDialog.Remove();
-            TooltipTextFilter.Remove();
-            ItemTypeBadge.Remove();
-            QoLUpdate.Shutdown();
+            // 同样逐个兜住：卸载链里任何一个抛异常，后面的补丁就撤不掉了，
+            // 异常还会冒回游戏加载器。
+            try { ModHook.OnCreateTooltipLate -= OnTooltipLate; }
+            catch (Exception e) { QLog.Warn("退订提示框钩子失败：" + e.Message); }
+
+            RemoveSafe("自动换电", AutoBatterySwap.Remove);
+            RemoveSafe("道具快捷键", QuickToolHotkey.Remove);
+            // 右键菜单补丁是 QuickToolHotkey 挂的，但它的 Remove 只撤 provider，补丁要单独撤
+            RemoveSafe("右键菜单", ItemContextMenu.Remove);
+            RemoveSafe("便捷框选", QuickBoxSelect.Remove);
+            RemoveSafe("一键上柜台", QuickShelf.Remove);
+            RemoveSafe("双击开锁", QuickUnlock.Remove);
+            RemoveSafe("柜台溢出", CounterOverflow.Remove);
+            RemoveSafe("前台提醒", CounterClutterWarn.Remove);
+            RemoveSafe("框选统计", SelectionCount.Remove);
+            RemoveSafe("对话加速", DialogueSpeedUp.Remove);
+            RemoveSafe("交易结果弹窗", TradeResultPopup.Remove);
+            RemoveSafe("需求高亮", DemandHighlight.Remove);
+            RemoveSafe("水质标签", WaterLabelSync.Remove);
+            RemoveSafe("汉化调试面板", DebugPanelZh.Remove);
+            RemoveSafe("店内行情", CalendarPriceLine.Remove);
+            RemoveSafe("打烊确认", ShutterConfirm.Remove);
+            RemoveSafe("摇铃确认", CustomerSkipConfirm.Remove);
+            RemoveSafe("到店提示", CustomerAlert.Remove);
+            RemoveSafe("顾客对话", CustomerDialog.Remove);
+            RemoveSafe("提示框精简", TooltipTextFilter.Remove);
+            RemoveSafe("荧光莓品质徽标", BerryBadge.Remove);
+            RemoveSafe("物品分类标签", ItemTypeBadge.Remove);
+
+            try { QoLUpdate.Shutdown(); }
+            catch (Exception e) { QLog.Warn("停止每帧驱动失败：" + e.Message); }
+
             Settings = null;
             QLog.Info("已停用");
+        }
+
+        private static void ApplySafe(string name, Action apply)
+        {
+            try
+            {
+                apply();
+            }
+            catch (Exception e)
+            {
+                QLog.Error("[" + name + "] 挂载失败", e);
+            }
+        }
+
+        private static void RemoveSafe(string name, Action remove)
+        {
+            try
+            {
+                remove();
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[" + name + "] 卸载失败：" + e.Message);
+            }
         }
 
         /// <summary>提示框拼完后的最后一步，只有真伪鉴定用得到。</summary>

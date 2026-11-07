@@ -277,70 +277,78 @@ namespace QoL
         /// </summary>
         private static void BeforeRender(GameItemElement __instance)
         {
-            GameItemElement element = __instance;
-
-            if (element == null)
-            {
-                return;
-            }
-
-            ElementState state;
-
             try
             {
-                state = States.GetValue(element, CreateState);
-            }
-            catch (Exception e)
-            {
-                if (_logged < 2)
-                {
-                    _logged++;
-                    QLog.Warn("荧光莓角标：取状态失败 —— " + e.GetType().Name + " " + e.Message);
-                }
+                GameItemElement element = __instance;
 
-                return;
-            }
-
-            // 没判定成荧光莓的不缓存结论：元素刚创建时标签可能还没写进去，
-            // 只在 true 时锁定，false 每次重新判（非荧光莓第一步就是字符串比较，很便宜）。
-            if (!state.IsBerry)
-            {
-                state.IsBerry = IsBerry(element);
-
-                if (!state.IsBerry)
+                if (element == null)
                 {
                     return;
                 }
-            }
 
-            Track(element);
+                ElementState state;
 
-            if (!Enabled)
-            {
-                Hide(state);
-                return;
-            }
+                try
+                {
+                    state = States.GetValue(element, CreateState);
+                }
+                catch (Exception e)
+                {
+                    if (_logged < 2)
+                    {
+                        _logged++;
+                        QLog.Warn("荧光莓角标：取状态失败 —— " + e.GetType().Name + " " + e.Message);
+                    }
 
-            int grade = DisplayGrade(element);
-            string style = TextStyle;
+                    return;
+                }
 
-            // 等级和写法都没变：这次什么都不用动（不写文本、不碰材质）
-            if (grade == state.ShownGrade && style == state.ShownStyle)
-            {
-                return;
-            }
+                // 没判定成荧光莓的不缓存结论：元素刚创建时标签可能还没写进去，
+                // 只在 true 时锁定，false 每次重新判（非荧光莓第一步就是字符串比较，很便宜）。
+                if (!state.IsBerry)
+                {
+                    state.IsBerry = IsBerry(element);
 
-            try
-            {
-                Apply(state, element, grade, style);
+                    if (!state.IsBerry)
+                    {
+                        return;
+                    }
+                }
+
+                Track(element);
+
+                if (!Enabled)
+                {
+                    Hide(state);
+                    return;
+                }
+
+                int grade = DisplayGrade(element);
+                string style = TextStyle;
+
+                // 等级和写法都没变：这次什么都不用动（不写文本、不碰材质）
+                if (grade == state.ShownGrade && style == state.ShownStyle)
+                {
+                    return;
+                }
+
+                try
+                {
+                    Apply(state, element, grade, style);
+                }
+                catch (Exception e)
+                {
+                    if (_logged < 4)
+                    {
+                        _logged++;
+                        QLog.Warn("荧光莓角标：更新失败 —— " + e.GetType().Name + " " + e.Message);
+                    }
+                }
+        
             }
             catch (Exception e)
             {
-                if (_logged < 4)
-                {
-                    _logged++;
-                    QLog.Warn("荧光莓角标：更新失败 —— " + e.GetType().Name + " " + e.Message);
-                }
+                QLog.Warn("[荧光莓徽标] 补丁出错：" + e.Message);
             }
         }
 

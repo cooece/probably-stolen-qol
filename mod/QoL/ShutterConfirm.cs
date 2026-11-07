@@ -190,6 +190,18 @@ namespace QoL
                         _dialogOpen = false;
                         panel.ClosePanel();
 
+                        // 二次校验：确认框开着的时候，场景/店铺状态/按钮都可能已经变了。
+                        // 校验不过就什么都不做，绝不替玩家关店。
+                        if (button == null) return;
+
+                        PlayerStore store = PlayerStore.Instance;
+                        if (store == null) return;
+                        if (store.storeState != PlayerStore.StoreState.OPEN)
+                        {
+                            Debug.Log(ModEntry.Tag + "打烊确认：店铺已不在营业状态，忽略");
+                            return;
+                        }
+
                         // 原版面板上「是」走的就是这个方法：关店 + 请走顾客 + 结算当天
                         button.EndAndClose();
                         Debug.Log(ModEntry.Tag + "打烊确认：是，关闭店铺");
@@ -206,8 +218,18 @@ namespace QoL
             catch (Exception e)
             {
                 _dialogOpen = false;
-                Debug.LogWarning(ModEntry.Tag + "弹打烊确认失败，按原版关店：" + e.Message);
-                button.EndAndClose();
+                Debug.LogWarning(ModEntry.Tag + "弹打烊确认失败，退回原版确认面板：" + e.Message);
+
+                // 不能在这里直接关店：玩家根本没点过「是」。
+                // 退回原版面板，让玩家自己确认。
+                try
+                {
+                    if (button != null) button.ShowConfirmCloseUI();
+                }
+                catch (Exception inner)
+                {
+                    Debug.LogWarning(ModEntry.Tag + "退回原版打烊面板也失败：" + inner.Message);
+                }
             }
         }
 

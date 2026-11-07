@@ -60,9 +60,17 @@ namespace QoL
 
         internal static void Apply()
         {
-            ItemContextMenu.RegisterProvider(ProvideContextMenu);
-            PatchSettingsInput();
-            QLog.Info("[一键上柜] 已挂载，当前按键 " + KeyDisplayName(CurrentKey));
+            try
+            {
+                ItemContextMenu.RegisterProvider(ProvideContextMenu);
+                PatchSettingsInput();
+                QLog.Info("[一键上柜] 已挂载，当前按键 " + KeyDisplayName(CurrentKey));
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[一键上柜台] 补丁出错：" + e.Message);
+            }
         }
 
         internal static void Remove()
@@ -442,16 +450,24 @@ namespace QoL
 
         private static void ProvideContextMenu(GameItem item, List<ItemMenuEntry> entries)
         {
-            if (item == null) return;
-
-            // 就算当前是「关闭」也留着这一项，点一下录制就能重新启用
-            entries.Add(new ItemMenuEntry
+            try
             {
-                Key = "quick_shelf_bind",
-                ElementName = "QolQuickShelfBind",
-                Text = "设上柜键(" + KeyDisplayName(CurrentKey) + ")",
-                OnClick = delegate { BeginCapture(null); }
-            });
+                if (item == null) return;
+
+                // 就算当前是「关闭」也留着这一项，点一下录制就能重新启用
+                entries.Add(new ItemMenuEntry
+                {
+                    Key = "quick_shelf_bind",
+                    ElementName = "QolQuickShelfBind",
+                    Text = "设上柜键(" + KeyDisplayName(CurrentKey) + ")",
+                    OnClick = delegate { BeginCapture(null); }
+                });
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[一键上柜台] 补丁出错：" + e.Message);
+            }
         }
 
         private static void BeginCapture(TMP_InputField field)

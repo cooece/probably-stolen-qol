@@ -16,6 +16,13 @@ namespace QoL
     internal static class QLog
     {
         private const string Tag = "[QoL] ";
+
+        /// <summary>同一条警告/错误在这个窗口内只输出一次，避免每帧异常把日志刷爆、频繁写盘。</summary>
+        private const float RepeatWindow = 10f;
+
+        private static readonly System.Collections.Generic.Dictionary<string, float> Recent =
+            new System.Collections.Generic.Dictionary<string, float>();
+
         private static string _logFilePath;
         private static readonly object _fileLock = new object();
         private static bool _initialized;
@@ -114,6 +121,7 @@ namespace QoL
         /// </summary>
         internal static void Warn(string message)
         {
+            if (IsRepeat("WARN", message)) return;
             Debug.LogWarning(Tag + message);
             WriteFile("WARN", message);
         }
@@ -123,9 +131,35 @@ namespace QoL
         /// </summary>
         internal static void Error(string message, Exception ex = null)
         {
+            if (IsRepeat("ERROR", message)) return;
             string fullMsg = ex != null ? $"{message}\n[Exception] {ex}" : message;
             Debug.LogError(Tag + fullMsg);
             WriteFile("ERROR", fullMsg);
+        }
+
+        /// <summary>
+        /// 同一条消息在 RepeatWindow 内只记一次。
+        /// 每帧路径 / 每件物品的失败如果连续报同样的错，只留第一条，避免写盘风暴。
+        /// </summary>
+        private static bool IsRepeat(string level, string message)
+        {
+            try
+            {
+                string text = message ?? "";
+                if (text.Length > 100) text = text.Substring(0, 100);
+                string key = level + "|" + text;
+
+                float now = Time.realtimeSinceStartup;
+                if (Recent.TryGetValue(key, out float last) && now - last < RepeatWindow) return true;
+
+                Recent[key] = now;
+                if (Recent.Count > 200) Recent.Clear();
+                return false;
+            }
+            catch
+            {
+                return false; // 限流本身失败就照常输出
+            }
         }
 
         /// <summary>

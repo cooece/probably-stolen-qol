@@ -88,6 +88,8 @@ namespace QoL
             ItemContextMenu.UnregisterProvider(ProvideContextMenu);
             StopUse();
             EndCapture();
+            _matchedItems.Clear();
+            _turboCandidates.Clear();
         }
 
         private static void ProvideContextMenu(GameItem item, List<ItemMenuEntry> entries)

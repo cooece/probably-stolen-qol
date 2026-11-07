@@ -369,45 +369,54 @@ namespace QoL
 
         private static bool TriggerButtonPrefix(ItemContextHandler __instance, RichTextElement button)
         {
-            if (button == null || _menuState == null || _menuState.ActiveButtons.Count == 0)
+            try
             {
-                return true;
-            }
-
-            ExtraButton matched = null;
-            for (int i = 0; i < _menuState.ActiveButtons.Count; i++)
-            {
-                if (_menuState.ActiveButtons[i].Element == button)
+                if (button == null || _menuState == null || _menuState.ActiveButtons.Count == 0)
                 {
-                    matched = _menuState.ActiveButtons[i];
-                    break;
+                    return true;
                 }
-            }
 
-            if (matched == null)
+                ExtraButton matched = null;
+                for (int i = 0; i < _menuState.ActiveButtons.Count; i++)
+                {
+                    if (_menuState.ActiveButtons[i].Element == button)
+                    {
+                        matched = _menuState.ActiveButtons[i];
+                        break;
+                    }
+                }
+
+                if (matched == null)
+                {
+                    return true;
+                }
+
+                if (!matched.Entry.Enabled)
+                {
+                    return false;
+                }
+
+                // 防误点保护（极短时间内的同位置抬起）
+                if (Time.unscaledTime - _lastPressTime < 0.15f &&
+                    (Input.mousePosition - _lastPressMouse).sqrMagnitude < 9f)
+                {
+                    return false;
+                }
+
+                GameItem currentItem = F_currentItem.GetValue(__instance) as GameItem;
+                Action<GameItem> clickAction = matched.Entry.OnClick;
+
+                // 关闭当前菜单并执行目标动作
+                M_OnEventReset?.Invoke(__instance, null);
+                clickAction?.Invoke(currentItem);
+                return false;
+        
+            }
+            catch (Exception e)
             {
+                QLog.Warn("[右键菜单] 补丁出错：" + e.Message);
                 return true;
             }
-
-            if (!matched.Entry.Enabled)
-            {
-                return false;
-            }
-
-            // 防误点保护（极短时间内的同位置抬起）
-            if (Time.unscaledTime - _lastPressTime < 0.15f &&
-                (Input.mousePosition - _lastPressMouse).sqrMagnitude < 9f)
-            {
-                return false;
-            }
-
-            GameItem currentItem = F_currentItem.GetValue(__instance) as GameItem;
-            Action<GameItem> clickAction = matched.Entry.OnClick;
-
-            // 关闭当前菜单并执行目标动作
-            M_OnEventReset?.Invoke(__instance, null);
-            clickAction?.Invoke(currentItem);
-            return false;
         }
 
         private static void FindContextMenuNodePostfix(ItemContextHandler __instance, ref GameObject __result)

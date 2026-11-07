@@ -196,6 +196,8 @@ namespace QoL
 
                 if (!Park(item))
                 {
+                    // 暂存区也满了：只能按原版规则丢弃，但至少要留一条日志
+                    QLog.Warn("[柜台溢出] 暂存区放不下「" + DisplayName(item) + "」，按原版规则丢弃");
                     item.Destroy();
                     return true;
                 }
@@ -298,7 +300,15 @@ namespace QoL
                 for (int i = _parked.Count - 1; i >= 0; i--)
                 {
                     GameItem item = _parked[i];
-                    if (item == null)
+                    if (item == null || item.parentInventory == null)
+                    {
+                        // 已经销毁 / 被移出暂存：不能再往柜台上放
+                        _parked.RemoveAt(i);
+                        continue;
+                    }
+
+                    // 玩家已经买下了（变成自己的东西）：不需要再补，也不该再放回去
+                    if (GeneralHelper.IsItemOwned(item))
                     {
                         _parked.RemoveAt(i);
                         continue;

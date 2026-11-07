@@ -60,6 +60,12 @@ namespace QoL
         private static string _lastLine;
         private static string _combined;
 
+        // 我们改过排版的那个文字框，以及它原本的排版设置：停用时还原，别把原版 UI 留在被改状态
+        private static TMP_Text _touched;
+        private static bool _origWordWrap;
+        private static bool _origAutoSize;
+        private static float _origFontMin;
+
         internal static void Apply()
         {
             if (_harmony != null)
@@ -106,6 +112,23 @@ namespace QoL
             }
 
             _harmony = null;
+
+            // 还原被我们改过的原版文字框排版
+            try
+            {
+                if (_touched != null)
+                {
+                    _touched.enableWordWrapping = _origWordWrap;
+                    _touched.enableAutoSizing = _origAutoSize;
+                    _touched.fontSizeMin = _origFontMin;
+                }
+            }
+            catch
+            {
+                // 场景已卸载时文字框可能已经销毁，忽略
+            }
+
+            _touched = null;
             _cachedLine = "";
             _cachedDay = -1;
             _lastBase = null;
@@ -139,6 +162,15 @@ namespace QoL
                 if (tmp == null)
                 {
                     return;
+                }
+
+                // 第一次碰到这个文字框时记下原版排版，停用时还原
+                if (_touched != tmp)
+                {
+                    _touched = tmp;
+                    _origWordWrap = tmp.enableWordWrapping;
+                    _origAutoSize = tmp.enableAutoSizing;
+                    _origFontMin = tmp.fontSizeMin;
                 }
 
                 // 每帧强制：关掉自动换行，让 TMP 的自动缩放优先缩字而不是折行——

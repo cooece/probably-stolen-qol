@@ -158,9 +158,17 @@ namespace QoL
 
         private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
         {
-            if (mode == LoadSceneMode.Single && scene.name != "InventoryScene")
+            try
             {
-                Release();
+                if (mode == LoadSceneMode.Single && scene.name != "InventoryScene")
+                {
+                    Release();
+                }
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[需求高亮] 补丁出错：" + e.Message);
             }
         }
 
@@ -176,33 +184,73 @@ namespace QoL
 
         private static void MarkDirty()
         {
-            _dirty = true;
+            try
+            {
+                _dirty = true;
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[需求高亮] 补丁出错：" + e.Message);
+            }
         }
 
         private static void ItemChanged(GameItem __instance)
         {
-            _dirty = true;
-            DemandRules.Forget(__instance);
+            try
+            {
+                _dirty = true;
+                DemandRules.Forget(__instance);
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[需求高亮] 补丁出错：" + e.Message);
+            }
         }
 
         private static void TagChanged(GameItem __instance)
         {
-            _dirty = true;
-            DemandRules.Forget(__instance);
+            try
+            {
+                _dirty = true;
+                DemandRules.Forget(__instance);
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[需求高亮] 补丁出错：" + e.Message);
+            }
         }
 
         private static void ItemMoved(GameItem __instance, GraphNodeStorage node)
         {
-            _dirty = true;
-            DemandRules.Forget(__instance);
+            try
+            {
+                _dirty = true;
+                DemandRules.Forget(__instance);
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[需求高亮] 补丁出错：" + e.Message);
+            }
         }
 
         private static void WindowChanged(PixelWindow __instance)
         {
-            List<GameItem> parentItems = __instance.parentItems;
-            if (parentItems != null && parentItems.Count > 0)
+            try
             {
-                _dirty = true;
+                List<GameItem> parentItems = __instance.parentItems;
+                if (parentItems != null && parentItems.Count > 0)
+                {
+                    _dirty = true;
+                }
+        
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[需求高亮] 补丁出错：" + e.Message);
             }
         }
 

@@ -21,6 +21,12 @@ namespace QoL
         private static bool _submitting;
         private static readonly Queue<int> _submitQueue = new Queue<int>();
         private static readonly Dictionary<int, GameItem> _byId = new Dictionary<int, GameItem>();
+
+        /// <summary>已被拒绝过的物品：同一顾客期间不再重复提交，免得反复戳不耐烦。</summary>
+        private static readonly HashSet<int> _rejected = new HashSet<int>();
+
+        private static int _rejectCount;
+
         private static float _scanTimer;
         private static bool _loggedError;
 
@@ -154,7 +160,8 @@ namespace QoL
             {
                 GameItem item = items[i];
                 if (item != null && item.IsTag("APPRAISAL_ITEM") &&
-                    AppraisalHelper.GetCorrectBaseValue(item) > 0)
+                    AppraisalHelper.GetCorrectBaseValue(item) > 0 &&
+                    !_rejected.Contains(item.uniqueId))
                 {
                     _byId[item.uniqueId] = item;
                     _submitQueue.Enqueue(item.uniqueId);
@@ -180,6 +187,8 @@ namespace QoL
             if (!AppraisalClientPresent())
             {
                 _submitQueue.Clear();
+                _rejected.Clear();
+                _rejectCount = 0;
                 _submitting = false;
                 return;
             }
@@ -223,10 +232,43 @@ namespace QoL
             int correct = AppraisalHelper.GetCorrectBaseValue(item);
             AppraisalServiceHelper.OnEstimate(item, correct * 105 / 100);
             _submitQueue.Dequeue();
+
+            // 提交后校验真实结果：原版 OnEstimate 在「顾客不耐烦」或「价格不接受」时
+            // 会直接返回、物品不动。物品还在柜台上就说明这次没成 ——
+            // 必须记下来别再提交，否则 0.3 秒重扫又会入队，两次就把顾客逼走。
+            if (StillOnCounter(item))
+            {
+                _rejected.Add(id);
+                _rejectCount++;
+
+                if (_rejectCount >= 2)
+                {
+                    _submitting = false;
+                    _submitQueue.Clear();
+                    QLog.Info("[自动估价] 连续被拒 " + _rejectCount + " 次，本次停止自动提交");
+                }
+                else
+                {
+                    QLog.Info("[自动估价] 「" + SafeName(item) + "」未被接受，跳过不再重复提交");
+                }
+            }
         }
 
-        private static bool StillOnCounter(GameItem item)
+        private static string SafeName(GameItem item)
         {
+            try
+            {
+                if (item == null) return "?";
+                string name = item.GetDisplayName();
+                return string.IsNullOrEmpty(name) ? "?" : name;
+            }
+            catch
+            {
+                return "?";
+            }
+        }
+
+        private static bool StillOnCounter(GameItem item)        {
             // 「还在柜台上」等价于「仍非玩家所有」——物品一旦被拿下柜台就会被标记为拥有。
             // 无需再全量扫描台面，直接查归属即可，避免每次提交前的重扫。
             try

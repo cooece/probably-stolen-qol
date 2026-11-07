@@ -33,6 +33,7 @@ namespace QoL
 
         private static bool _reminding;
         private static float _nextRecall;
+        private static float _nextCheck;
 
         internal static void Apply()
         {
@@ -107,6 +108,10 @@ namespace QoL
         internal static void Tick(float dt)
         {
             if (!_reminding) return;
+
+            // 空间检查不必每帧跑：柜台格子 × 物品数量的双重遍历，0.5 秒一次足够
+            if (Time.unscaledTime < _nextCheck) return;
+            _nextCheck = Time.unscaledTime + 0.5f;
 
             try
             {

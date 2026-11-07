@@ -121,6 +121,10 @@ namespace QoL
                 if (!Enabled) return true;
                 if (newItem == null) return true;
 
+                // 只接自己拥有的锁箱：柜台/展示柜上顾客待售的锁箱不碰，
+                // 否则会拿自己的卡去开别人的箱子、还能看到/拿走箱内物品。
+                if (!GeneralHelper.IsItemOwned(newItem)) return true;
+
                 // 没上锁的箱子（以及所有普通物品）完全交给原版，双击照常打开
                 if (!LockHelper.IsCurrentlyLocked(newItem)) return true;
 
@@ -154,7 +158,11 @@ namespace QoL
             catch (Exception e)
             {
                 QLog.Warn("[双击开锁] 处理双击失败：" + e);
-                return true;
+
+                // 异常时吃掉这次双击，不要放行原版 DoubleClickAction：
+                // 原版 OpenContentAction 不检查 contentWindow.isLocked，
+                // 放行会出现「没开锁却看到箱内物品」。
+                return false;
             }
         }
 
@@ -224,6 +232,7 @@ namespace QoL
                 store.backInvinvElement,
                 store.frontInvinvElement,
                 store.afterhourInventory,
+                store.showcaseElement,
             };
 
             for (int i = 0; i < roots.Length; i++)
@@ -256,10 +265,14 @@ namespace QoL
 
             try
             {
-                // 直接看「锁着的容器 + 锁未开」，不依赖是否已拥有，
-                // 柜台/展示柜上待售的锁箱也不会被翻。
+                // 不是锁箱：照常往里搜（背包、普通箱子）
                 if (!item.IsTag("LOCKED_CONTAINER_TAG")) return true;
-                return !item.GetTagReadonly("LOCK_STATUS").GetBool();
+
+                // 不是我拥有的锁箱：也不翻（柜台/展示柜上待售的都算）
+                if (!GeneralHelper.IsItemOwned(item)) return false;
+
+                // 用原版锁定判定，别自己拼 tag 读法
+                return !LockHelper.IsCurrentlyLocked(item);
             }
             catch
             {

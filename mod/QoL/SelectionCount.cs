@@ -92,6 +92,7 @@ namespace QoL
         private static TMP_Text _footerRight;
 
         private static SpriteRenderer _register;
+        private static float _registerNextTry;
         private static Sprite _patchSprite;
         private static bool _patchLoadFailed;
 
@@ -256,6 +257,7 @@ namespace QoL
             _footerLeft = null;
             _footerRight = null;
             _register = null;
+            _registerNextTry = 0f;
             _leftText = "";
             _rightText = "";
             _failed = false;
@@ -570,7 +572,17 @@ namespace QoL
         {
             rect = default(Rect);
 
-            if (_register == null) _register = FindRegister();
+            if (_register == null)
+            {
+                // 找不到收银机就别每 0.1 秒全场景扫一次（FindObjectsOfTypeAll 很贵），
+                // 失败了隔 5 秒再试。
+                if (Time.unscaledTime >= _registerNextTry)
+                {
+                    _register = FindRegister();
+                    if (_register == null) _registerNextTry = Time.unscaledTime + 5f;
+                }
+            }
+
             if (_register == null || _register.sprite == null) return false;
 
             Camera cam = Camera.main;

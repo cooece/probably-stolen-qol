@@ -92,11 +92,27 @@ namespace QoL
                 if (item == null) continue;
                 if (!GeneralHelper.IsItemOwned(item)) continue;
                 if (IsAlreadyInTrash(item, entry, trash)) continue;
+                if (IsBeingDragged(item)) continue;   // 玩家正拖着这张纸，别抢
 
                 string kind = Classify(item);
                 if (kind == null) continue;
 
                 DiscardOne(item, trash, kind);
+            }
+        }
+
+        /// <summary>这件东西正被鼠标拖着 —— 等玩家放下再处理，别半路抢走。</summary>
+        private static bool IsBeingDragged(GameItem item)
+        {
+            try
+            {
+                ItemMouseDragHandler drag = ItemMouseDragHandler.current;
+                if (drag == null || !drag.IsDraggingItem) return false;
+                return drag.GetCurrentItem() == item;
+            }
+            catch
+            {
+                return false;
             }
         }
 

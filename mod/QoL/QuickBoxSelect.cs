@@ -122,6 +122,7 @@ namespace QoL
         internal static void Remove()
         {
             _pending = null;
+            _disabled = false;   // 否则同进程重新启用后永远失效
             try
             {
                 if (_harmony != null)
