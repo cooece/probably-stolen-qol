@@ -3,7 +3,10 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace QoL
 {
@@ -26,11 +29,21 @@ namespace QoL
         /// <summary>设置里填这个值表示停用。</summary>
         internal const string Disabled = "关闭";
 
+        /// <summary>设置项在配置面板里的键名，用来认出「就是我们这一行」。</summary>
+        private const string ShelfKeyId = "shelf.key";
+
+        private const string HarmonyId = "local.qol.quick_shelf";
+
         private static readonly FieldInfo F_selectedItems =
             AccessTools.Field(typeof(ItemMultiSelectHandler), "selectedItems");
 
+        private static Harmony _harmony;
+
         private static bool _capturing;
         private static int _captureFrame = -1;
+        private static TMP_InputField _captureField;
+        private static bool _captureFromPanel;
+        private static bool _panelHooked;
 
         internal static bool IsCapturing => _capturing;
 
@@ -41,6 +54,7 @@ namespace QoL
         internal static void Apply()
         {
             ItemContextMenu.RegisterProvider(ProvideContextMenu);
+            PatchSettingsInput();
             QLog.Info("[一键上柜] 已挂载，当前按键 " + KeyDisplayName(CurrentKey));
         }
 
@@ -48,6 +62,87 @@ namespace QoL
         {
             ItemContextMenu.UnregisterProvider(ProvideContextMenu);
             _capturing = false;
+            _captureField = null;
+            _captureFromPanel = false;
+
+            if (_harmony != null)
+            {
+                try { _harmony.UnpatchAll(HarmonyId); }
+                catch (Exception e) { QLog.Warn("[一键上柜] 卸下设置面板补丁失败：" + e.Message); }
+                _harmony = null;
+            }
+        }
+
+        /// <summary>
+        /// 让设置面板里这一行的输入框变成「点一下就等你按键」。
+        ///
+        /// 游戏的模组设置只支持勾选/数字/文本，没有录制按键的控件，所以这里挂到
+        /// CustomUIBuilder.AddInput 上：等它把这一行造好，再拿 CustomUIElement.input
+        /// 把输入框设成只读，并盖一个按钮监听 —— 点一下就进捕获状态。
+        /// </summary>
+        private static void PatchSettingsInput()
+        {
+            try
+            {
+                MethodInfo addInput = AccessTools.Method(typeof(CustomUIBuilder), "AddInput");
+                if (addInput == null)
+                {
+                    QLog.Warn("[一键上柜] 找不到 CustomUIBuilder.AddInput，设置面板里只能手动填按键名");
+                    return;
+                }
+
+                _harmony = new Harmony(HarmonyId);
+                _harmony.Patch(addInput, postfix: new HarmonyMethod(typeof(QuickShelf), nameof(AddInputPostfix)));
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[一键上柜] 挂设置面板补丁失败：" + e.Message);
+            }
+        }
+
+        /// <summary>AddInput 执行完，__instance.Last 就是刚造好的那一行控件。</summary>
+        private static void AddInputPostfix(CustomUIBuilder __instance, string id)
+        {
+            if (id != ShelfKeyId) return;
+
+            try
+            {
+                CustomUIElement element = __instance != null ? __instance.Last : null;
+                if (element == null || element.input == null) return;
+
+                AttachCapture(element.input);
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[一键上柜] 改造改键框失败：" + e.Message);
+            }
+        }
+
+        private static void AttachCapture(TMP_InputField input)
+        {
+            if (input == null) return;
+
+            // 只读：点击不再弹输入法，但仍然能被点中
+            input.readOnly = true;
+
+            // 旧配置里存的是 Mouse2 这种名字，显示成「鼠标中键」
+            string shown = KeyDisplayName(ParseKey(input.text));
+            if (input.text != shown) input.SetTextWithoutNotify(shown);
+
+            Button button = input.GetComponent<Button>();
+            if (button == null)
+            {
+                button = input.gameObject.AddComponent<Button>();
+                button.transition = Selectable.Transition.None;
+            }
+            button.onClick.RemoveAllListeners();
+            button.onClick.AddListener(delegate { BeginCapture(input); });
+
+            if (!_panelHooked)
+            {
+                _panelHooked = true;
+                QLog.Info("[一键上柜] 设置面板的改键框已接管：点一下就等按键");
+            }
         }
 
         // ---------------------------------------------------------------
@@ -66,32 +161,55 @@ namespace QoL
 
         internal static KeyCode CurrentKey
         {
-            get
-            {
-                string raw = RawValue;
-                if (string.IsNullOrEmpty(raw)) return KeyCode.None;
-
-                raw = raw.Trim();
-                if (raw.Length == 0 || raw == Disabled || raw == "无" || raw == "None") return KeyCode.None;
-
-                KeyCode code;
-                if (Enum.TryParse(raw, true, out code) && code != KeyCode.None) return code;
-                return KeyCode.Mouse2; // 值写坏了就退回默认，不让功能失效
-            }
+            get { return ParseKey(RawValue); }
         }
 
-        private static bool Enabled => CurrentKey != KeyCode.None;
-
-        private static string KeyDisplayName(KeyCode key)
+        /// <summary>
+        /// 把配置里的值认成按键。三种写法都收：
+        /// 中文名（鼠标中键 / 侧键1 / 关闭）、KeyCode 名（Mouse2 / N）、以及旧的数字。
+        /// 认不出来就退回默认中键，不让功能变哑巴。
+        /// </summary>
+        internal static KeyCode ParseKey(string raw)
         {
-            if (key == KeyCode.None) return Disabled;
+            if (string.IsNullOrEmpty(raw)) return KeyCode.None;
+
+            raw = raw.Trim();
+            if (raw.Length == 0) return KeyCode.None;
+            if (raw == Disabled || raw == "无" || raw == "None") return KeyCode.None;
+
+            switch (raw)
+            {
+                case "鼠标左键": case "左键": return KeyCode.Mouse0;
+                case "鼠标右键": case "右键": return KeyCode.Mouse1;
+                case "鼠标中键": case "中键": case "滚轮": return KeyCode.Mouse2;
+                case "鼠标侧键1": case "侧键1": case "侧键4": return KeyCode.Mouse3;
+                case "鼠标侧键2": case "侧键2": case "侧键5": return KeyCode.Mouse4;
+                case "鼠标键5": return KeyCode.Mouse5;
+                case "鼠标键6": return KeyCode.Mouse6;
+            }
+
+            KeyCode code;
+            if (Enum.TryParse(raw, true, out code) && code != KeyCode.None) return code;
+
+            int number;
+            if (int.TryParse(raw, out number) && Enum.IsDefined(typeof(KeyCode), number)) return (KeyCode)number;
+
+            return KeyCode.Mouse2;
+        }
+
+        /// <summary>按键在界面上显示的名字。鼠标键写成中文，键盘键直接用 KeyCode 名。</summary>
+        internal static string KeyDisplayName(KeyCode key)
+        {
             switch (key)
             {
-                case KeyCode.Mouse0: return "左键";
-                case KeyCode.Mouse1: return "右键";
-                case KeyCode.Mouse2: return "中键";
-                case KeyCode.Mouse3: return "侧键4";
-                case KeyCode.Mouse4: return "侧键5";
+                case KeyCode.None: return Disabled;
+                case KeyCode.Mouse0: return "鼠标左键";
+                case KeyCode.Mouse1: return "鼠标右键";
+                case KeyCode.Mouse2: return "鼠标中键";
+                case KeyCode.Mouse3: return "鼠标侧键1";
+                case KeyCode.Mouse4: return "鼠标侧键2";
+                case KeyCode.Mouse5: return "鼠标键5";
+                case KeyCode.Mouse6: return "鼠标键6";
                 default: return key.ToString();
             }
         }
@@ -106,6 +224,12 @@ namespace QoL
             {
                 if (_capturing)
                 {
+                    // 设置面板被关掉时，输入框会先被销毁；这时候别继续等按键
+                    if (_captureFromPanel && _captureField == null)
+                    {
+                        _capturing = false;
+                        return;
+                    }
                     PollCapture();
                     return;
                 }
@@ -261,39 +385,51 @@ namespace QoL
 
         private static void ProvideContextMenu(GameItem item, List<ItemMenuEntry> entries)
         {
-            if (!Enabled || item == null) return;
+            if (item == null) return;
 
+            // 就算当前是「关闭」也留着这一项，点一下录制就能重新启用
             entries.Add(new ItemMenuEntry
             {
                 Key = "quick_shelf_bind",
                 ElementName = "QolQuickShelfBind",
                 Text = "设上柜键(" + KeyDisplayName(CurrentKey) + ")",
-                OnClick = delegate { BeginCapture(); }
+                OnClick = delegate { BeginCapture(null); }
             });
         }
 
-        private static void BeginCapture()
+        private static void BeginCapture(TMP_InputField field)
         {
             _capturing = true;
+            _captureField = field;
+            _captureFromPanel = field != null;
             _captureFrame = Time.frameCount;
-            Notify("请按下要用的按键（Esc 取消）");
+            Notify("请按下要用的按键（右键或 Esc 取消）");
         }
 
         private static void PollCapture()
         {
-            if (Time.frameCount <= _captureFrame + 1) return; // 跳过触发这次捕获的那一下
+            if (Time.frameCount <= _captureFrame + 1) return; // 跳过触发捕获的那一下点击
 
-            if (Input.GetKeyDown(KeyCode.Escape))
+            if (Input.GetKeyDown(KeyCode.Escape) || Input.GetMouseButtonDown(1))
             {
-                _capturing = false;
+                CancelCapture();
                 Notify("已取消");
                 return;
             }
 
-            // 鼠标键
-            for (int i = 0; i <= 4; i++)
+            // Backspace / Delete = 停用，对应设置里显示「关闭」
+            if (Input.GetKeyDown(KeyCode.Backspace) || Input.GetKeyDown(KeyCode.Delete))
             {
-                if (i == 1) continue; // 右键是菜单本身的键，不收
+                Bind(KeyCode.None);
+                return;
+            }
+
+            if (!Input.anyKeyDown) return;
+
+            // 鼠标键：左/中/侧键都能绑，右键留给「取消」
+            for (int i = 0; i <= 6; i++)
+            {
+                if (i == 1) continue;
                 if (Input.GetMouseButtonDown(i))
                 {
                     Bind((KeyCode)((int)KeyCode.Mouse0 + i));
@@ -314,16 +450,53 @@ namespace QoL
             }
         }
 
+        private static void CancelCapture()
+        {
+            _capturing = false;
+            _captureField = null;
+            _captureFromPanel = false;
+            ClearSelection();
+        }
+
         private static void Bind(KeyCode code)
         {
             _capturing = false;
+            _captureFromPanel = false;
+
+            string name = KeyDisplayName(code);
 
             QoLSettings s = ModEntry.Settings;
-            if (s == null || s.ShelfKey == null) return;
+            if (s == null || s.ShelfKey == null)
+            {
+                _captureField = null;
+                return;
+            }
 
-            s.ShelfKey.Set(code.ToString());
-            Notify("上柜键已设为 " + KeyDisplayName(code));
-            QLog.Info("[一键上柜] 按键改为 " + code);
+            s.ShelfKey.Set(name);
+
+            // 同步回设置面板那一格，否则点「应用」会把这格里的旧文字又写回去
+            if (_captureField != null)
+            {
+                _captureField.SetTextWithoutNotify(name);
+                _captureField = null;
+            }
+
+            ClearSelection();
+            Notify(code == KeyCode.None ? "已关闭一键上柜台" : "上柜键已设为 " + name);
+            QLog.Info("[一键上柜] 按键改为 " + name);
+        }
+
+        /// <summary>把焦点从输入框移开，避免面板里继续吃键盘。</summary>
+        private static void ClearSelection()
+        {
+            try
+            {
+                if (EventSystem.current != null) EventSystem.current.SetSelectedGameObject(null);
+            }
+            catch
+            {
+                // 没有 EventSystem 就算了
+            }
         }
 
         private static void Notify(string text)
