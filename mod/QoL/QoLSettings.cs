@@ -75,6 +75,9 @@ namespace QoL
         /// <summary>框选统计：选中物品时显示每种物品的数量与合计。</summary>
         internal ConfigEntry<bool> SelectionCountEnabled { get; }
 
+        /// <summary>一键上柜台：填按键名（Mouse2/Mouse3/F…），填「关闭」则停用。</summary>
+        internal ConfigEntry<string> ShelfKey { get; }
+
         /// <summary>调试面板：一个下拉同时管开关与自定义快捷键。</summary>
         internal ConfigEntry<string> DebugPanelMode { get; }
 
@@ -233,6 +236,17 @@ namespace QoL
                 "框选",
                 () => "框选统计",
                 () => "框中物品时，收银机屏幕切成统计页，列出每种物品的数量；种类多时只列最多的 3 种。");
+
+            // ---------------- 一键上柜台 ----------------
+            // 一个设置同时管开关和按键：填「关闭」停用；按键由物品右键菜单里的
+            // 「设上柜键」直接录制写入，一般不用手打。
+            ShelfKey = _config.Define(
+                "shelf.key",
+                "Mouse2",
+                "框选",
+                () => "一键上柜台按键",
+                null,   // 不给下拉候选：任意按键都行，靠右键菜单录制
+                () => "鼠标停在一件物品上，或框选一批物品，按下这个键就把它们摆到柜台；柜台塞满自动停，放不下的留在原处。右键点物品可以重新录制按键，填「关闭」则停用。");
 
             // ---------------- 开发者 ----------------
             // 键名沿用旧版 dev.panel_hotkey，玩家已经选过的按键不会丢。

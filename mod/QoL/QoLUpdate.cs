@@ -79,6 +79,9 @@ namespace QoL
                 // 框选统计：把数量叠在收银机屏幕上，最多列 3 种（内部 0.1 秒限流）
                 SelectionCount.Tick();
 
+                // 一键上柜台：按绑定键把框选的 / 悬停的物品摆到展示柜
+                QuickShelf.Tick(dt);
+
                 // 全自动换电：统一队列补换机器电池（内部 0.2 秒限流）
                 AutoBatterySwap.Tick(dt);
 

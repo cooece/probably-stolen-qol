@@ -82,6 +82,9 @@ namespace QoL
                 // 便捷框选：满容器也能长按左键从物品上拉出框选框
                 QuickBoxSelect.Apply();
 
+                // 一键上柜台：按绑定键把框选 / 悬停的物品摆到展示柜
+                QuickShelf.Apply();
+
                 // 开发者工具：汉化 F9 调试面板 + 自定义开关键
                 DebugPanelZh.Apply();
 
@@ -106,6 +109,7 @@ namespace QoL
             AutoBatterySwap.Remove();
             QuickToolHotkey.Remove();
             QuickBoxSelect.Remove();
+            QuickShelf.Remove();
             SelectionCount.Remove();
             DialogueSpeedUp.Remove();
             TradeResultPopup.Remove();
