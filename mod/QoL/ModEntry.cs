@@ -91,6 +91,9 @@ namespace QoL
                 // 柜台溢出：外柜台摆满时原版会丢货，这里先收着，有空位再补上
                 CounterOverflow.Apply();
 
+                // 前台提醒：按铃叫到人时，前台被自己的杂物占满就提示清理
+                CounterClutterWarn.Apply();
+
                 // 开发者工具：汉化 F9 调试面板 + 自定义开关键
                 DebugPanelZh.Apply();
 
@@ -118,6 +121,7 @@ namespace QoL
             QuickShelf.Remove();
             QuickUnlock.Remove();
             CounterOverflow.Remove();
+            CounterClutterWarn.Remove();
             SelectionCount.Remove();
             DialogueSpeedUp.Remove();
             TradeResultPopup.Remove();
