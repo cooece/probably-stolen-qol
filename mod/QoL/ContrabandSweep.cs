@@ -26,6 +26,9 @@ namespace QoL
             internal int Count;
         }
 
+        /// <summary>结果提示在屏幕上留多久（游戏默认只有 3 秒）。</summary>
+        private const float HoldSeconds = 8f;
+
         private static readonly List<Entry> Moved = new List<Entry>();
         private static readonly List<GameItem> Candidates = new List<GameItem>();
         private static readonly List<GameInventory> Targets = new List<GameInventory>();
@@ -867,9 +870,18 @@ namespace QoL
             try
             {
                 ReputationUIManager ui = ReputationUIManager.Instance;
-                if (ui != null)
+                if (ui == null)
                 {
-                    ui.Notify(text);
+                    return;
+                }
+
+                ui.Notify(text);
+
+                // 游戏气泡固定 3 秒（个别设置 6 秒）就收；这条文字长、要读完，
+                // 自己把它多留一会儿。NotifierTimer 是 public 字段，原版按它倒计时。
+                if (ui.notifierTimer < HoldSeconds)
+                {
+                    ui.notifierTimer = HoldSeconds;
                 }
             }
             catch
