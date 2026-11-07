@@ -6,7 +6,6 @@ using HarmonyLib;
 using TMPro;
 using UnityEngine;
 using UnityEngine.EventSystems;
-using UnityEngine.UI;
 
 namespace QoL
 {
@@ -44,6 +43,14 @@ namespace QoL
         private static TMP_InputField _captureField;
         private static bool _captureFromPanel;
         private static bool _panelHooked;
+
+        // 按键值缓存：CurrentKey 每帧被问一次，值不变就不重算
+        private static string _keyCacheRaw;
+        private static KeyCode _keyCacheKey;
+        private static bool _keyCacheReady;
+
+        // 捕获时遍历用，只分配一次
+        private static KeyCode[] _keyList;
 
         internal static bool IsCapturing => _capturing;
 
@@ -114,7 +121,7 @@ namespace QoL
                 CustomUIElement element = __instance != null ? __instance.Last : null;
                 if (element == null || element.input == null) return;
 
-                AttachCapture(element);
+                AttachCapture(element.input);
             }
             catch (Exception e)
             {
@@ -122,11 +129,8 @@ namespace QoL
             }
         }
 
-        private static void AttachCapture(CustomUIElement element)
+        private static void AttachCapture(TMP_InputField input)
         {
-            if (element == null) return;
-
-            TMP_InputField input = element.input;
             if (input == null) return;
 
             // 旧配置里存的是 Mouse2 这种名字，显示成「鼠标中键」。
@@ -141,34 +145,17 @@ namespace QoL
                 QLog.Warn("[一键上柜] 刷新改键框文字失败：" + e);
             }
 
-            // 按钮挂在整行控件（root）上：点击命中的是这一行的背景图，
-            // 挂在输入框子物体上可能收不到点击。
+            // 用输入框自带的 onSelect：点一下就选中，等于「点了这一格」。
+            // 之前试过在多出来的 Button 上监听，Unity 那边会抛空引用，而且点击命中的
+            // 是整行背景图、不一定传得到子物体上的按钮 —— 这条路更短也更稳。
             try
             {
-                GameObject host = element.root != null ? element.root : input.gameObject;
-                Button button = host.GetComponent<Button>();
-                if (button == null)
-                {
-                    button = host.AddComponent<Button>();
-                    button.transition = Selectable.Transition.None;
-                }
-                // 只追加，不清空：万一这一行原本就带按钮逻辑，别把它废掉
-                button.onClick.AddListener(delegate { BeginCapture(input); });
+                input.onSelect.AddListener(delegate { BeginCapture(input); });
             }
             catch (Exception e)
             {
-                QLog.Warn("[一键上柜] 给改键框挂点击失败，改用输入框自身事件：" + e);
-
-                // 退一步：用输入框自带的 onSelect（点击就会触发），不清空游戏原有监听
-                try
-                {
-                    input.onSelect.AddListener(delegate { BeginCapture(input); });
-                }
-                catch (Exception inner)
-                {
-                    QLog.Warn("[一键上柜] 改键框接管彻底失败，只能右键物品录制：" + inner);
-                    return;
-                }
+                QLog.Warn("[一键上柜] 改键框接管失败，只能用右键物品录制：" + e);
+                return;
             }
 
             // 放在最后：点击能用了才设只读，否则至少还能手动输入
@@ -198,7 +185,18 @@ namespace QoL
 
         internal static KeyCode CurrentKey
         {
-            get { return ParseKey(RawValue); }
+            get
+            {
+                // 每帧都会问一次，值没变就不重复解析（省下 Trim + 字符串比较）
+                string raw = RawValue;
+                if (!_keyCacheReady || !string.Equals(raw, _keyCacheRaw, StringComparison.Ordinal))
+                {
+                    _keyCacheRaw = raw;
+                    _keyCacheKey = ParseKey(raw);
+                    _keyCacheReady = true;
+                }
+                return _keyCacheKey;
+            }
         }
 
         /// <summary>
@@ -361,7 +359,9 @@ namespace QoL
             if (destination == null) return;
 
             int moved = 0;
-            int skipped = 0;
+            int notOwned = 0;    // 没买下来的
+            int noRoom = 0;      // 目标塞满了
+            int failed = 0;      // 物品本身拿不动 / 抛异常
 
             for (int i = 0; i < targets.Count; i++)
             {
@@ -370,22 +370,23 @@ namespace QoL
 
                 try
                 {
-                    if (!GeneralHelper.IsItemOwned(item)) { skipped++; continue; }   // 还没买下来的东西不能上柜
+                    if (!GeneralHelper.IsItemOwned(item)) { notOwned++; continue; }   // 还没买下来的东西不能上柜
                     if (ReferenceEquals(item.parentInventory, destination)) continue;  // 已经在目标里，别白搬
-                    if (!item.MayRemove()) { skipped++; continue; }
+                    if (!item.MayRemove()) { failed++; continue; }
 
                     int remain = GraphUtils.TryAcceptAll(destination, item);
                     if (remain <= 0) moved++;
-                    else skipped++;
+                    else noRoom++;
                 }
                 catch (Exception e)
                 {
-                    skipped++;
+                    failed++;
                     QLog.Warn("[一键上柜] 移动「" + SafeName(item) + "」失败：" + e.Message);
                 }
             }
 
-            QLog.DebugLog("[一键上柜] 上架 " + moved + " 件，未放入 " + skipped + " 件（选中 " + targets.Count + "）");
+            QLog.DebugLog("[一键上柜] 上架 " + moved + " 件（选中 " + targets.Count +
+                          "，未购买 " + notOwned + "，放不下 " + noRoom + "，拿不动 " + failed + "）");
         }
 
         /// <summary>优先用框选集合；没有框选就用鼠标指着的那一件。</summary>
@@ -492,9 +493,11 @@ namespace QoL
                 }
             }
 
-            // 键盘键
-            foreach (KeyCode code in Enum.GetValues(typeof(KeyCode)))
+            // 键盘键（KeyCode 列表只取一次，避免每次捕获都分配数组）
+            if (_keyList == null) _keyList = (KeyCode[])Enum.GetValues(typeof(KeyCode));
+            for (int k = 0; k < _keyList.Length; k++)
             {
+                KeyCode code = _keyList[k];
                 if (code >= KeyCode.Mouse0 && code <= KeyCode.Mouse6) continue;
                 if (code == KeyCode.Escape || code == KeyCode.None) continue;
                 if (Input.GetKeyDown(code))
