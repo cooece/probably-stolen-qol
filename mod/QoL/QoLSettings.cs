@@ -86,6 +86,9 @@ namespace QoL
         /// <summary>一键上柜台：物品摆到哪（前厅柜台 / 展示柜 / 后仓）。</summary>
         internal ConfigEntry<string> ShelfTarget { get; }
 
+        /// <summary>双击开锁：双击带锁的物资箱时自动用身上的钥匙卡打开。</summary>
+        internal ConfigEntry<bool> QuickUnlockEnabled { get; }
+
         /// <summary>调试面板：一个下拉同时管开关与自定义快捷键。</summary>
         internal ConfigEntry<string> DebugPanelMode { get; }
 
@@ -184,6 +187,14 @@ namespace QoL
                 "交易",
                 () => "交易结果弹窗",
                 () => "买卖成交后弹一条提示，显示到账金额和声望变化。");
+
+            // ---------------- 物资箱 ----------------
+            QuickUnlockEnabled = _config.Define(
+                "unlock.double_click",
+                true,
+                "物资箱",
+                () => "双击开锁",
+                () => "双击带锁的物资箱，自动用身上对应的钥匙卡打开，开前会问一句；没有卡就提示缺哪一张。");
 
             // ---------------- 单据 ----------------
             AutoDiscardDocuments = _config.Define(

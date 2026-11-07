@@ -85,6 +85,9 @@ namespace QoL
                 // 一键上柜台：按绑定键把框选 / 悬停的物品摆到展示柜
                 QuickShelf.Apply();
 
+                // 双击开锁：双击带锁的物资箱，自动用身上的钥匙卡打开
+                QuickUnlock.Apply();
+
                 // 开发者工具：汉化 F9 调试面板 + 自定义开关键
                 DebugPanelZh.Apply();
 
@@ -110,6 +113,7 @@ namespace QoL
             QuickToolHotkey.Remove();
             QuickBoxSelect.Remove();
             QuickShelf.Remove();
+            QuickUnlock.Remove();
             SelectionCount.Remove();
             DialogueSpeedUp.Remove();
             TradeResultPopup.Remove();
