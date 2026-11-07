@@ -432,7 +432,8 @@ namespace QoL
                     Hits.Add(new Hit { Element = element, Style = style });
                 }
 
-                if (opened && !kind.Illegal)
+                // 机器仓里的东西被标出来时，对应标签页也要标（检查模式同样要标）
+                if (opened)
                 {
                     FindTabs(item);
                 }
