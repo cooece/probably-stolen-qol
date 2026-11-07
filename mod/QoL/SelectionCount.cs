@@ -95,6 +95,9 @@ namespace QoL
         private static Sprite _patchSprite;
         private static bool _patchLoadFailed;
 
+        /// <summary>遮罩图的主色，用来决定叠在上面的文字用深蓝还是橙色。加载遮罩时更新。</summary>
+        private static Color32 _patchColor = new Color32(0xE0, 0xD0, 0x9D, 0xFF);
+
         private static float _nextRefresh;
         private static bool _failed;
         private static string _leftText = "";
@@ -316,7 +319,11 @@ namespace QoL
         private static void SetupText(TMP_Text t)
         {
             t.font = CustomerBadge.ResolveFont();
-            t.color = new Color32(0xCB, 0x7A, 0x59, 0xFF); // #CB7A59，和原版屏幕上的字一个色
+            // 文字颜色跟着遮罩走：冷色遮罩（配合 HUD 的蓝屏）用深蓝字，暖色遮罩（原版米黄屏）用原版橙字。
+            // 这样换遮罩图就自动换文字色，不必再改代码、也不用维护两套构建。
+            t.color = _patchColor.b > _patchColor.r
+                ? new Color32(0x1C, 0x33, 0x46, 0xFF)   // #1C3346 深蓝
+                : new Color32(0xCB, 0x7A, 0x59, 0xFF);  // #CB7A59 原版橙
             t.enableWordWrapping = false;
             t.overflowMode = TextOverflowModes.Overflow; // 越界交给 RectMask2D 裁掉
             t.raycastTarget = false;
@@ -368,6 +375,9 @@ namespace QoL
                     return null;
                 }
 
+                // 记下遮罩的主色：文字颜色要跟着它走，换图不用改代码
+                _patchColor = AverageOpaqueColor(tex);
+
                 _patchSprite = Sprite.Create(tex,
                     new Rect(0f, 0f, tex.width, tex.height),
                     new Vector2(0.5f, 0.5f), 100f);
@@ -379,6 +389,26 @@ namespace QoL
                 QLog.Warn("框选统计：遮罩图加载失败 —— " + e.Message);
                 return null;
             }
+        }
+
+        /// <summary>
+        /// 取遮罩图里不透明像素的平均色。遮罩本身就是一块纯色补丁，
+        /// 算出主色就能判断它是「配 HUD 的冷色」还是「原版米黄」，文字颜色据此选择。
+        /// </summary>
+        private static Color32 AverageOpaqueColor(Texture2D tex)
+        {
+            Color32[] pixels = tex.GetPixels32();
+            long r = 0, g = 0, b = 0, n = 0;
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                if (pixels[i].a < 200) continue;
+                r += pixels[i].r;
+                g += pixels[i].g;
+                b += pixels[i].b;
+                n++;
+            }
+            if (n == 0) return new Color32(0xE0, 0xD0, 0x9D, 0xFF);
+            return new Color32((byte)(r / n), (byte)(g / n), (byte)(b / n), 0xFF);
         }
 
         // ---------------------------------------------------------------
