@@ -100,10 +100,14 @@ namespace QoL
             }
         }
 
-        /// <summary>AddInput 执行完，__instance.Last 就是刚造好的那一行控件。</summary>
-        private static void AddInputPostfix(CustomUIBuilder __instance, string id)
+        /// <summary>
+        /// AddInput 执行完，__instance.Last 就是刚造好的那一行控件。
+        /// 用 __args 取 id（第 4 个参数），不按参数名绑定，避免游戏改名后补丁静默失效。
+        /// </summary>
+        private static void AddInputPostfix(CustomUIBuilder __instance, object[] __args)
         {
-            if (id != ShelfKeyId) return;
+            if (__args == null || __args.Length < 4) return;
+            if ((__args[3] as string) != ShelfKeyId) return;
 
             try
             {
