@@ -233,7 +233,9 @@ namespace QoL
 
                 try
                 {
-                    result.AddRange(GraphUtils.FindAllChildrenType<GameItem>(root));
+                    // 第三个参数是「要不要继续往这个容器里搜」：
+                    // 遇到锁着的箱子就返回 false，箱子里的东西一律不算「身上的卡」。
+                    result.AddRange(GraphUtils.FindAllChildrenType<GameItem>(root, null, CanSearchInside));
                 }
                 catch (Exception e)
                 {
@@ -242,6 +244,27 @@ namespace QoL
             }
 
             return result;
+        }
+
+        /// <summary>
+        /// 锁着 / 封着的容器不往里搜 —— 否则会拿箱子自己装的钥匙卡去开它自己。
+        /// 已经解锁的箱子不受影响，里面的卡照常能用。
+        /// </summary>
+        private static bool CanSearchInside(GameItem item)
+        {
+            if (item == null) return true;
+
+            try
+            {
+                // 直接看「锁着的容器 + 锁未开」，不依赖是否已拥有，
+                // 柜台/展示柜上待售的锁箱也不会被翻。
+                if (!item.IsTag("LOCKED_CONTAINER_TAG")) return true;
+                return !item.GetTagReadonly("LOCK_STATUS").GetBool();
+            }
+            catch
+            {
+                return true;
+            }
         }
 
         // ---------------------------------------------------------------
