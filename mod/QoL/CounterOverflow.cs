@@ -683,8 +683,8 @@ namespace QoL
                 _toolbar.anchorMax = new Vector2(0f, 1f);
                 _toolbar.pivot = new Vector2(0f, 0f);   // 左下角当基准 → 底边贴着窗口顶边之上
                 // 右边距：柜台画布本身缩放到屏幕约 3 倍，这里 1 画布像素 ≈ 3 屏幕像素。
-                // 原先 2 像素边距，用户要求再往左靠 4 个屏幕像素 → 边距改 3.5。
-                const float rightMargin = 3.5f;
+                // 用户累计要求再往左 4 + 10 个屏幕像素 → 边距从 2 调到 6.8。
+                const float rightMargin = 6.8f;
                 _toolbar.anchoredPosition = new Vector2(windowWidth - total - rightMargin, 3f);
                 _toolbar.sizeDelta = new Vector2(total, size);
 
