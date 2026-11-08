@@ -674,7 +674,7 @@ namespace QoL
                 _toolbar.pivot = new Vector2(1f, 1f);
                 _toolbar.anchoredPosition = new Vector2(-2f, -2f);
 
-                const float size = 22f;
+                const float size = 16f;   // 一个格子大，跟柜台格子同比例
                 const float gap = 2f;
                 _toolbar.sizeDelta = new Vector2(size * 2f + gap, size);
 
