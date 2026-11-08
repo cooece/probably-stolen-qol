@@ -512,12 +512,9 @@ namespace QoL
             {
                 GameItem item = items[i];
                 if (item == null) continue;
-                if (GeneralHelper.IsItemOwned(item))
-                {
-                    // 玩家已经买下了：不需要再补，也不该再放回去
-                    item.Destroy();
-                    continue;
-                }
+
+                // 玩家已经买下的东西不往柜台上搬，也绝不销毁
+                if (GeneralHelper.IsItemOwned(item)) continue;
 
                 if (!TryPut(front, item)) continue;
 
