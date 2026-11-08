@@ -649,18 +649,17 @@ namespace QoL
                 Sprite nextNormal = null;
                 Sprite nextHover = null;
 
-                if (NegociationUIManager.Instance != null && NegociationUIManager.Instance.uiObject != null)
-                {
-                    NegotiationTabletFrame frame =
-                        NegociationUIManager.Instance.uiObject.GetComponent<NegotiationTabletFrame>();
-                    if (frame != null)
-                    {
-                        prevNormal = frame.prevNormal;
-                        prevHover = frame.prevHover;
-                        nextNormal = frame.nextNormal;
-                        nextHover = frame.nextHover;
-                    }
-                }
+                // 估价平板还没建好就先等：这时候拿不到皮肤，不能当作「永远拿不到」
+                if (NegociationUIManager.Instance == null || NegociationUIManager.Instance.uiObject == null) return;
+
+                NegotiationTabletFrame frame =
+                    NegociationUIManager.Instance.uiObject.GetComponent<NegotiationTabletFrame>();
+                if (frame == null) return;
+
+                prevNormal = frame.prevNormal;
+                prevHover = frame.prevHover;
+                nextNormal = frame.nextNormal;
+                nextHover = frame.nextHover;
 
                 if (prevNormal == null || nextNormal == null)
                 {
