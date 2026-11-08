@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
@@ -38,6 +38,7 @@ namespace QoL
             ("柜台溢出",       d => CounterOverflow.Tick(d)),
             ("前台杂物提醒",   d => CounterClutterWarn.Tick(d)),
             ("全自动换电",     d => AutoBatterySwap.Tick(d)),
+            ("自动换滤芯",     d => AutoFilterSwap.Tick(d)),
             ("汉化调试面板",   d => DebugPanelZh.Tick()),
         };
 

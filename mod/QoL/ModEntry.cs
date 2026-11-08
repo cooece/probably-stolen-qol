@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 namespace QoL
@@ -75,6 +75,7 @@ namespace QoL
             ApplySafe("汉化调试面板", DebugPanelZh.Apply);
             ApplySafe("荧光莓品质徽标", delegate { BerryBadge.Apply(Settings); });
             ApplySafe("自动换电", AutoBatterySwap.Apply);
+            ApplySafe("自动换滤芯", AutoFilterSwap.Apply);
 
             try { ModHook.OnCreateTooltipLate += OnTooltipLate; }
             catch (Exception e) { QLog.Error("订阅提示框钩子失败", e); }
@@ -91,6 +92,7 @@ namespace QoL
             catch (Exception e) { QLog.Warn("退订提示框钩子失败：" + e.Message); }
 
             RemoveSafe("自动换电", AutoBatterySwap.Remove);
+            RemoveSafe("自动换滤芯", AutoFilterSwap.Remove);
             RemoveSafe("道具快捷键", QuickToolHotkey.Remove);
             // 右键菜单补丁是 QuickToolHotkey 挂的，但它的 Remove 只撤 provider，补丁要单独撤
             RemoveSafe("右键菜单", ItemContextMenu.Remove);

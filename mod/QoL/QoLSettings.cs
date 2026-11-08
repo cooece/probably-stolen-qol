@@ -104,6 +104,9 @@ namespace QoL
         /// <summary>全自动换电：一个下拉同时管开关、时机与提前量。</summary>
         internal ConfigEntry<string> AutoBatterySwapMode { get; }
 
+        /// <summary>自动换滤芯：一个下拉同时管开关与时机（过夜检查 / 随时换）。</summary>
+        internal ConfigEntry<string> AutoFilterSwapMode { get; }
+
         internal int Count => _config.Entries.Count;
 
         internal string FilePath => _config.FilePath;
@@ -323,6 +326,15 @@ namespace QoL
                 new[] { AutoBatterySwap.Off, AutoBatterySwap.MorningOnly,
                         AutoBatterySwap.Auto1, AutoBatterySwap.Auto2 },
                 () => "机器没电时自动换上有电的电池，旧电池放回充电器；水瓶打印机这类手动用的，按按钮才装电池、用完自动取回。数字越大换得越早。");
+
+            // ---------------- 用水 ----------------
+            AutoFilterSwapMode = _config.Define(
+                "water.auto_filter",
+                AutoFilterSwap.Always,
+                "用水",
+                () => "自动换滤芯",
+                new[] { AutoFilterSwap.Off, AutoFilterSwap.NightOnly, AutoFilterSwap.Always },
+                () => "水壶和鱼缸机器的滤芯用完自动换：干净的优先、同档先用耐久少的；过夜前算一下今晚够不够，不够提前换。换下来的旧滤芯放进装滤芯的箱子，没箱子放后仓。");
 
             // 把定义（可能带新的默认值）写回文件
             _config.Save();
