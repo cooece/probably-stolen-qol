@@ -1,5 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Reflection;
+using HarmonyLib;
 using UnityEngine;
 
 namespace QoL
@@ -28,6 +30,8 @@ namespace QoL
         internal const string NightOnly = "只在过夜换";
         internal const string Always = "随时换（含过夜）";
 
+        private const string HarmonyId = "local.qol.auto_filter_swap";
+
         /// <summary>随时换的扫描间隔（秒）：别每帧扫全店物品。</summary>
         private const float ScanInterval = 1.5f;
 
@@ -37,14 +41,19 @@ namespace QoL
         /// <summary>「没滤芯可换」气泡的最小间隔（秒），别一直刷。</summary>
         private const float NoticeCooldown = 60f;
 
+        /// <summary>接水限流提示的最小间隔（秒）。</summary>
+        private const float FillNoticeCooldown = 4f;
+
         /// <summary>过夜消耗估算的安全系数（%）。</summary>
         private const int SafetyPercent = 120;
 
+        private static Harmony _harmony;
         private static bool _applied;
 
         private static float _nextScan;
         private static float _nextNightTry;
         private static float _nextNotice;
+        private static float _nextFillNotice;
         private static bool _nightPending;
 
         /// <summary>一个待换的滤芯位：机器槽或水壶槽。</summary>
@@ -85,6 +94,8 @@ namespace QoL
                 ModHook.OnHandlingNightlyServicesEarly += OnNight;
                 ModHook.OnWakingUpLate += OnMorning;
 
+                PatchAddWater();
+
                 _nextScan = 0f;
                 _nextNightTry = 0f;
                 _nightPending = false;
@@ -95,6 +106,28 @@ namespace QoL
             {
                 QLog.Error("自动换滤芯：挂载失败", e);
                 Remove();
+            }
+        }
+
+        /// <summary>拦水龙头注水：只放「滤芯能完整滤干净」的那部分水进来。</summary>
+        private static void PatchAddWater()
+        {
+            try
+            {
+                MethodInfo add = AccessTools.Method(typeof(WaterHelper), "AddWater",
+                    new[] { typeof(GameItem), typeof(int), typeof(int), typeof(bool), typeof(int), typeof(int), typeof(bool) });
+                if (add == null)
+                {
+                    QLog.Warn("自动换滤芯：找不到 WaterHelper.AddWater，接水限流不可用");
+                    return;
+                }
+
+                if (_harmony == null) _harmony = new Harmony(HarmonyId);
+                _harmony.Patch(add, prefix: new HarmonyMethod(typeof(AutoFilterSwap), nameof(AddWaterPrefix)));
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("自动换滤芯：挂接水补丁失败 —— " + e.Message);
             }
         }
 
@@ -111,11 +144,19 @@ namespace QoL
                 QLog.Warn("自动换滤芯：卸载时出错 —— " + e.Message);
             }
 
+            try
+            {
+                if (_harmony != null) _harmony.UnpatchAll(HarmonyId);
+            }
+            catch { }
+
+            _harmony = null;
             _applied = false;
             _nightPending = false;
             _nextScan = 0f;
             _nextNightTry = 0f;
             _nextNotice = 0f;
+            _nextFillNotice = 0f;
         }
 
         /// <summary>过夜：只挂个标记，真正的搬货交给 Tick（结算期间别抢交换缓冲）。</summary>
@@ -697,6 +738,179 @@ namespace QoL
             }
 
             QLog.Info("自动换滤芯：" + msg);
+        }
+
+        // ---------------------------------------------------------------
+        // 接水限流：WaterHelper.AddWater 前缀
+        // ---------------------------------------------------------------
+        //
+        // 水龙头注水是一次灌满（addAmount=9999999），游戏会把整壶水的污染物
+        // 一次性丢给滤芯：能滤多少滤多少，滤不掉的照样进壶 —— 整壶水就废了。
+        // 这里先算出「这点耐久能完整滤干净多少水」，把 addAmount 压到这个值。
+
+        private static bool AddWaterPrefix(GameItem waterContainer, int grade, ref int addAmount,
+                                           bool useRange, int lowPara, int highPara)
+        {
+            try
+            {
+                if (!Enabled || waterContainer == null) return true;
+                if (!waterContainer.IsTag("FILTER_CONTAINER_TAG")) return true;   // 只有装滤芯的容器才限流
+
+                GameItem filter = WaterHelper.GetFilterItem(waterContainer);
+                if (filter == null) return true;                                   // 没滤芯：照游戏原样
+
+                int capacity = waterContainer.GetTagReadonly("LIQUID_CONTAINER_CAPACITY").GetInt();
+                int filled = 0;
+                List<Liquid> liquids = Liquid.Liquids;
+                for (int i = 0; i < liquids.Count; i++)
+                {
+                    if (liquids[i] == null) continue;
+                    filled += waterContainer.GetTagReadonly(liquids[i].currentPart).GetInt();
+                }
+
+                int free = capacity - filled;
+                if (free <= 0) return true;
+
+                int want = addAmount < 0 ? free : Math.Min(addAmount, free);
+                if (want <= 0) return true;
+
+                int max = MaxFullyFilterable(filter, want, grade, useRange, lowPara);
+                if (max >= want) return true;      // 够滤，正常灌
+
+                if (max <= 0)
+                {
+                    FillNotice("滤芯耐久不够，接不了干净的水（换一支再接）");
+                    return false;                  // 一点也不放进来，免得接成脏水
+                }
+
+                addAmount = max;
+                FillNotice("滤芯耐久只够过滤 " + (max / 1000) + " ml，已按上限接水");
+                QLog.Info("自动换滤芯：接水限流 " + (want / 1000) + " → " + (max / 1000) + " ml（耐久 " + Real(filter) + "）");
+                return true;
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("自动换滤芯：接水限流出错 —— " + e.Message);
+                return true;
+            }
+        }
+
+        /// <summary>这点耐久能完整过滤多少水量（parts）。按最脏的水质算，宁可少接也不接脏。</summary>
+        private static int MaxFullyFilterable(GameItem filter, int want, int grade, bool useRange, int lowPara)
+        {
+            Dictionary<string, float> dist = Distribution(grade);
+            if (dist == null || dist.Count == 0) return want;
+
+            int durability = Real(filter);
+            if (durability <= 0) return 0;
+
+            int size = 0;
+            try
+            {
+                if (filter.IsTag("FILTER_SIZE_TAG")) size = filter.GetTagReadonly("FILTER_SIZE_TAG").GetInt();
+            }
+            catch { }
+
+            int purity = useRange ? lowPara : GradeLowPurity(grade);
+
+            int lo = 0;
+            int hi = want;
+            while (lo < hi)
+            {
+                int mid = (lo + hi + 1) / 2;
+                if (CanFullyFilter(mid, dist, purity, size, durability)) lo = mid;
+                else hi = mid - 1;
+            }
+            return lo;
+        }
+
+        /// <summary>按 AddWater 的公式还原污染物分配，估算这点水会不会把耐久吃超。</summary>
+        private static bool CanFullyFilter(int volume, Dictionary<string, float> dist, int purity, int size, int durability)
+        {
+            if (volume <= 0) return true;
+
+            long pure = ((long)volume * purity + 9999) / 10000;
+            int dirty = (int)(volume - pure);
+            if (dirty <= 0) return true;
+
+            int cost = 0;
+            List<Liquid> liquids = Liquid.Liquids;
+
+            foreach (KeyValuePair<string, float> kv in dist)
+            {
+                Liquid l = null;
+                for (int i = 0; i < liquids.Count; i++)
+                {
+                    if (liquids[i] != null && string.Equals(liquids[i].currentPart, kv.Key, StringComparison.Ordinal))
+                    {
+                        l = liquids[i];
+                        break;
+                    }
+                }
+                if (l == null) continue;
+
+                // 微生物只有 UV 滤芯处理，普通滤芯不扣耐久
+                if (string.Equals(l.identifier, "microbe", StringComparison.Ordinal)) continue;
+                // 孔径比颗粒大：这类根本滤不掉，也不扣耐久
+                if (size > 0 && size > l.particleSize) continue;
+
+                int amount = (int)(dirty * kv.Value);
+                if (amount <= 0) continue;
+
+                int per = Mathf.Max(1, l.filterVolumeRemoved);
+                int use = Mathf.Max(1, l.filterDurabilityUsage);
+                cost += ((amount + per - 1) / per) * use;
+
+                if (cost > durability) return false;
+            }
+
+            return cost <= durability;
+        }
+
+        /// <summary>和 AddWater 内部同一套水质分布。</summary>
+        private static Dictionary<string, float> Distribution(int grade)
+        {
+            try
+            {
+                switch (grade)
+                {
+                    case 0:
+                    case 1:
+                    case 3:
+                        return WaterPremadeHelper.waterContaminantDistribution;
+                    case 2:
+                        return WaterPremadeHelper.baseWaterContaminantDistribution;
+                    case 4:
+                        return WaterPremadeHelper.rustWaterContaminantDistribution;
+                    default:
+                        return WaterPremadeHelper.gutterflowContaminantDistribution;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        /// <summary>和 AddWater 内部同一套「该等级最脏能有多脏」（纯度下限）。</summary>
+        private static int GradeLowPurity(int grade)
+        {
+            switch (grade)
+            {
+                case 0: return 9990;
+                case 1: return 9900;
+                case 2: return 9800;
+                case 3: return 9600;
+                case 4: return 9000;
+                default: return 3500;
+            }
+        }
+
+        private static void FillNotice(string msg)
+        {
+            if (Time.unscaledTime < _nextFillNotice) return;
+            _nextFillNotice = Time.unscaledTime + FillNoticeCooldown;
+            Notify(msg);
         }
     }
 }
