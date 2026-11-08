@@ -666,17 +666,24 @@ namespace QoL
                     return;
                 }
 
+                const float size = 16f;   // 一个格子大，跟柜台格子同比例
+                const float gap = 2f;
+                float total = size * 2f + gap;
+
+                // 坑：frontInvWindow 的节点本身几乎没有尺寸，用锚点 (1,1) 会算到节点原点
+                // （上次就跑到了货架最左边）。游戏自己摆窗口子节点用的是「左上角 + 像素坐标」
+                // （WildNetworkUI.SetRect：anchor 左上、pivot 左上），这里照同一套来：
+                // 用窗口像素宽度算右上角，再把整个箭头块放到窗口顶边之上。
+                float windowWidth = window.widthPixels > 0 ? window.widthPixels : 18 * 16f;
+
                 GameObject holder = new GameObject("QoL_PageArrows", typeof(RectTransform));
                 _toolbar = (RectTransform)holder.transform;
                 _toolbar.SetParent(window.handler.rectTransform, false);
-                _toolbar.anchorMin = new Vector2(1f, 1f);
-                _toolbar.anchorMax = new Vector2(1f, 1f);
-                _toolbar.pivot = new Vector2(1f, 1f);
-                _toolbar.anchoredPosition = new Vector2(-2f, -2f);
-
-                const float size = 16f;   // 一个格子大，跟柜台格子同比例
-                const float gap = 2f;
-                _toolbar.sizeDelta = new Vector2(size * 2f + gap, size);
+                _toolbar.anchorMin = new Vector2(0f, 1f);
+                _toolbar.anchorMax = new Vector2(0f, 1f);
+                _toolbar.pivot = new Vector2(0f, 0f);   // 左下角当基准 → 底边贴着窗口顶边之上
+                _toolbar.anchoredPosition = new Vector2(windowWidth - total - 2f, 3f);
+                _toolbar.sizeDelta = new Vector2(total, size);
 
                 _prevButton = TabletUI.ArrowButton(_toolbar, "QoL_Prev", 0f, 0f, size,
                     prevNormal, prevHover, delegate { SwitchPage(-1); });
