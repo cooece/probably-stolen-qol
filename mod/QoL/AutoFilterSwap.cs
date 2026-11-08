@@ -253,6 +253,13 @@ namespace QoL
                     continue;
                 }
 
+                // 过夜换：新滤芯至少得比旧的好，否则纯白折腾（换上去还是不够今晚用）
+                if (nightly && cur != null && Real(pick) <= have)
+                {
+                    failed++;
+                    continue;
+                }
+
                 if (!SwapInto(t, pick, all))
                 {
                     failed++;
@@ -566,6 +573,9 @@ namespace QoL
                     Liquid l = liquids[i];
                     if (l == null) continue;
                     if (string.Equals(l.identifier, "water", StringComparison.Ordinal)) continue;
+
+                    // 微生物只有 UV 滤芯处理，普通/高级滤芯遇到它原样放行、不扣耐久
+                    if (string.Equals(l.identifier, "microbe", StringComparison.Ordinal)) continue;
 
                     // 滤芯孔径比污染物颗粒大：这类根本滤不掉，也不消耗耐久
                     if (size > 0 && size > l.particleSize) continue;
