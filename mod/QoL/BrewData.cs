@@ -166,8 +166,12 @@ namespace QoL
         /// <summary>一杯酒要 749ml 以上；瓶子容量 750。</summary>
         internal const int WaterPerBottle = 749;
 
-        /// <summary>不能抽水的东西：鱼缸水箱、水培箱（水是给生物用的）。</summary>
-        private static readonly string[] NoDrawWater = { "ras_water_tank", "hydroponic" };
+        /// <summary>
+        /// 不能抽水的东西（本体或插在里面的容器都算）：
+        /// 鱼缸水箱、水培种植机（水是给生物用的）；
+        /// 船载水循环机、饮水机（插在里面的壶/瓶是设备的一部分，抽了影响设备用）。
+        /// </summary>
+        private static readonly string[] NoDrawWater = { "ras_water_tank", "hydroponic", "water_recycler_system", "water_fountain" };
 
         private sealed class RefComparer : IEqualityComparer<GameItem>
         {
@@ -205,6 +209,9 @@ namespace QoL
 
                 // 地面/顾客身上的东西也会被枚举到，只认玩家自己的
                 if (!Owned(item)) continue;
+
+                // 藏在暗格 / 锁在保险箱里的，或者正被玩家拖在手上的，一律不碰
+                if (Hidden(item) || InsideHidden(item) || Dragged(item)) continue;
 
                 if (id == BerryId)
                 {
@@ -460,6 +467,46 @@ namespace QoL
         internal static bool Owned(GameItem item)
         {
             try { return item != null && item.IsTag("IS_OWNED_TAG"); }
+            catch { return false; }
+        }
+
+        /// <summary>走私暗格、上锁保险箱里的东西：玩家特意藏起来的，自动化别去动。</summary>
+        private static bool Hidden(GameItem item)
+        {
+            try
+            {
+                if (item == null) return false;
+                return item.IsTag("ITEM_HIDDEN_TAG") || item.IsTag("ITEM_BEHIND_LOCK_TAG");
+            }
+            catch { return false; }
+        }
+
+        /// <summary>东西装在容器里时，容器本身在暗格/锁箱里也算（查祖先链，最多 8 层）。</summary>
+        private static bool InsideHidden(GameItem item)
+        {
+            try
+            {
+                GameInventory inv = item.parentInventory;
+                for (int guard = 0; inv != null && guard < 8; guard++)
+                {
+                    GameItem parent = inv.GetParentItem();
+                    if (parent == null) return false;
+                    if (Hidden(parent)) return true;
+                    inv = parent.parentInventory;
+                }
+            }
+            catch { }
+            return false;
+        }
+
+        /// <summary>正被玩家拖在手上的那一件：这时候去搬它会和拖拽打架。</summary>
+        private static bool Dragged(GameItem item)
+        {
+            try
+            {
+                ItemMouseDragHandler drag = ItemMouseDragHandler.current;
+                return drag != null && drag.IsDraggingItem && drag.GetCurrentItem() == item;
+            }
             catch { return false; }
         }
 
