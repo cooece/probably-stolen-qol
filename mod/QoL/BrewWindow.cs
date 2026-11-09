@@ -34,13 +34,17 @@ namespace QoL
         private const float BtnH = 32f;
         private const float Gap = 6f;
 
-        // 表列宽：706 + 5 个间距 30 = 736
-        private const float ColName = 150f;
+        // 表列宽：144+66+190+60+96+148 = 704 + 5 个间距 30 = 734
+        private const float ColName = 144f;
         private const float ColScore = 66f;
-        private const float ColRecipe = 200f;
+        private const float ColRecipe = 190f;
         private const float ColDays = 60f;
-        private const float ColCount = 130f;
-        private const float ColAct = 100f;
+        private const float ColCount = 96f;
+        private const float ColAct = 148f;
+
+        // 操作列里的 < N > 三个控件（按钮最小宽 32，见机械风 CreateButton）
+        private const float ArrowW = 32f;
+        private const float BrewW = ColAct - ArrowW * 2f - Gap * 2f;
 
         private static readonly Color Body = MachineryStyle.BODY_TEXT;
         private static readonly Color Value = MachineryStyle.VALUE_TEXT;
@@ -59,6 +63,12 @@ namespace QoL
 
         private static bool _qualityFirst = true;
         private static bool _qualityLoaded;
+
+        /// <summary>每一档用户自己选的瓶数（key = 档位；走私酒用 100+tier）。</summary>
+        private static readonly Dictionary<int, int> _want = new Dictionary<int, int>();
+
+        /// <summary>用户手动调过瓶数的档位：材料变动时不再自动跟随推荐。</summary>
+        private static readonly HashSet<int> _touched = new HashSet<int>();
 
         // ---------------------------------------------------------------
         // 对外
@@ -89,7 +99,13 @@ namespace QoL
                     Remember(ui);
                     ui.CloseWindow(WindowId);
                 }
-                else Build(ui);
+                else
+                {
+                    // 每次重新打开都按推荐重新起算，关窗期间的调整不保留
+                    _want.Clear();
+                    _touched.Clear();
+                    Build(ui);
+                }
             }
             catch (Exception e)
             {
@@ -162,7 +178,13 @@ namespace QoL
             List<BrewTierRow> rows = BrewAllocator.Plan(stock, QualityFirst, YeastPower(stock), out note);
 
             int total = 0;
-            for (int i = 0; i < rows.Count; i++) total += rows[i].Count;
+            int wantTotal = 0;
+            for (int i = 0; i < rows.Count; i++)
+            {
+                total += rows[i].Count;
+                ApplyWant(rows[i]);
+                wantTotal += rows[i].Want;
+            }
 
             CustomUIBuilder b = ui.CreateWindow(WindowId, Title, "overlay", null, CustomUIManager.Style.Machinery)
                 .SetSize(WinW, WinH)
@@ -177,7 +199,7 @@ namespace QoL
             BuildTable(b, rows);
 
             b.AddSeparator();
-            BuildFooter(b, total, rows);
+            BuildFooter(b, total, wantTotal, rows);
 
             b.End();
 
@@ -338,7 +360,7 @@ namespace QoL
                 }
             }
 
-            Text(b, total > 0 ? "共可酿 " + total + " 瓶" : "一瓶也酿不了", 150f, 14f,
+            Text(b, total > 0 ? "材料够 " + total + " 瓶" : "一瓶也酿不了", 150f, 14f,
                 total > 0 ? OkColor : BadColor).SetAlignment(HorizontalAlignmentOptions.Right);
 
             b.End();
@@ -355,8 +377,10 @@ namespace QoL
             Text(b, "分数", ColScore, 13f, DimColor);
             Text(b, "每瓶配方", ColRecipe, 13f, DimColor);
             Text(b, "发酵", ColDays, 13f, DimColor);
-            Text(b, "可酿", ColCount, 13f, DimColor);
-            Text(b, "操作", ColAct, 13f, DimColor);
+            Tip(Text(b, "可酿", ColCount, 13f, DimColor),
+                "按当前分法分到的瓶数。材料是共用的，各档数字不能相加。");
+            Tip(Text(b, "自选瓶数", ColAct, 13f, DimColor),
+                "用 < > 调这一档要酿几瓶（上限 = 材料全给它时能做多少），点中间的「酿 N」直接开酿。");
             b.End();
 
             b.BeginColumn(Pad, TextAnchor.UpperLeft);
@@ -381,25 +405,64 @@ namespace QoL
 
             if (row.Count > 0) Text(b, "×" + row.Count, ColCount, 16f, GoldColor);
             else if (row.Feasible) Text(b, "0", ColCount, 15f, DimColor);
-            else Text(b, row.Reason ?? "做不了", ColCount, 13f, new Color(0.60f, 0.47f, 0.45f));
+            else Text(b, "—", ColCount, 15f, DimColor);
 
+            // 操作列：< 酿N >（自己选瓶数，点中间直接酿）
             BrewTierRow captured = row;
-            if (row.Count > 0)
+            bool canBrew = row.Want > 0;
+
+            Button(b, "<", ArrowW, delegate { Adjust(captured, -1); }, canBrew,
+                "少酿一瓶", 16f, true);
+            Button(b, row.Want > 0 ? "酿 " + row.Want : "酿", BrewW, delegate { Brewing.BrewTier(captured); }, canBrew,
+                canBrew
+                    ? "按这一档的配方，一次酿 " + row.Want + " 瓶（最多 " + row.Max + " 瓶）"
+                    : (row.Reason ?? "这一档现在做不出来"), 15f, true);
+            Button(b, ">", ArrowW, delegate { Adjust(captured, 1); }, row.Want < row.Max,
+                row.Want >= row.Max ? "材料最多做到 " + row.Max + " 瓶" : "多酿一瓶", 16f, true);
+
+            b.End();
+        }
+
+        // ---------------------------------------------------------------
+        // 自选瓶数
+        // ---------------------------------------------------------------
+
+        private static int RowKey(BrewTierRow row)
+        {
+            return row.Counterfeit ? 100 + row.Tier : row.Tier;
+        }
+
+        /// <summary>算出这一档当前的瓶数：用户调过就用他的，没调过就跟随推荐。</summary>
+        private static void ApplyWant(BrewTierRow row)
+        {
+            int key = RowKey(row);
+
+            int want;
+            if (_touched.Contains(key))
             {
-                Button(b, "酿 " + row.Count, ColAct, delegate { Brewing.BrewTier(captured); }, true,
-                    "把这一档分到的 " + row.Count + " 瓶一次酿完");
-            }
-            else if (row.Feasible)
-            {
-                Button(b, "酿 1", ColAct, delegate { Brewing.BrewTier(captured); }, true,
-                    "材料够做一瓶，单独酿一瓶这个档位");
+                if (!_want.TryGetValue(key, out want)) want = 0;
             }
             else
             {
-                Button(b, "酿", ColAct, null, false, row.Reason);
+                want = row.Count > 0 ? row.Count : (row.Feasible ? 1 : 0);
             }
 
-            b.End();
+            want = Mathf.Clamp(want, 0, Math.Max(0, row.Max));
+            _want[key] = want;
+            row.Want = want;
+        }
+
+        private static void Adjust(BrewTierRow row, int delta)
+        {
+            int key = RowKey(row);
+            int want;
+            if (!_want.TryGetValue(key, out want)) want = row.Want;
+
+            want = Mathf.Clamp(want + delta, 0, Math.Max(0, row.Max));
+            _want[key] = want;
+            _touched.Add(key);
+
+            Brewing.Rescan();
         }
 
         private static string RowTip(BrewTierRow row)
@@ -409,7 +472,8 @@ namespace QoL
             StringBuilder sb = new StringBuilder();
             sb.Append("每瓶要：").Append(row.RecipeText).Append(" + 酵母×1");
             sb.Append("\n分数：").Append(row.ScoreText).Append("　发酵：").Append(row.Days).Append(" 夜");
-            sb.Append("\n当前分到：").Append(row.Count).Append(" 瓶");
+            sb.Append("\n这一档最多能做：").Append(row.Max).Append(" 瓶");
+            sb.Append("\n已选：").Append(row.Want).Append(" 瓶（用左右箭头调，点中间直接酿）");
 
             if (row.Counterfeit) sb.Append("\n走私酒：算违禁品，治安检查会查，售价也低");
             else if (row.Tier >= 4) sb.Append("\n挂「奢侈」标签，顾客更容易收");
@@ -422,12 +486,16 @@ namespace QoL
         // 4) 底部
         // ---------------------------------------------------------------
 
-        private static void BuildFooter(CustomUIBuilder b, int total, List<BrewTierRow> rows)
+        private static void BuildFooter(CustomUIBuilder b, int total, int wantTotal, List<BrewTierRow> rows)
         {
             b.BeginRow(Gap, TextAnchor.MiddleLeft);
 
-            CustomUIElement hint = Text(b,
-                "「可酿」是按当前分法分到的；灰掉的档位材料够时也能单独酿 1 瓶", -1f, 13f, DimColor);
+            bool over = wantTotal > total;
+            string hintText = over
+                ? "已选 " + wantTotal + " 瓶，材料只够 " + total + " 瓶 —— 超出的会酿失败"
+                : "已选 " + wantTotal + " 瓶（材料够 " + total + " 瓶）　左右箭头调瓶数，点中间直接酿";
+
+            CustomUIElement hint = Text(b, hintText, -1f, 13f, over ? BadColor : DimColor);
             if (hint != null)
             {
                 hint.SetFlexible(1f, 0f);
@@ -441,9 +509,9 @@ namespace QoL
             Button(b, "刷新", 90f, Brewing.Rescan, true, "材料有变动（拿果子、倒水、做瓶）后点一下重新算");
 
             List<BrewTierRow> captured = rows;
-            Button(b, total > 0 ? "一键酿造（" + total + " 瓶）" : "一键酿造", 210f,
-                delegate { Brewing.BrewEverything(captured); }, total > 0,
-                "按表格从上到下，把每一档分到的瓶数全酿了");
+            Button(b, wantTotal > 0 ? "一键酿造（" + wantTotal + " 瓶）" : "一键酿造", 210f,
+                delegate { Brewing.BrewEverything(captured); }, wantTotal > 0,
+                "按表格从上到下，把每一档选好的瓶数全酿了");
 
             b.End();
         }
@@ -506,7 +574,8 @@ namespace QoL
             }
         }
 
-        private static void Button(CustomUIBuilder b, string text, float width, Action onClick, bool enabled, string tooltip = null)
+        private static void Button(CustomUIBuilder b, string text, float width, Action onClick, bool enabled,
+            string tooltip = null, float fontSize = 0f, bool compact = false)
         {
             try
             {
@@ -521,7 +590,17 @@ namespace QoL
                     el.text.verticalAlignment = VerticalAlignmentOptions.Middle;
                     el.text.enableWordWrapping = false;
                     el.text.overflowMode = TextOverflowModes.Ellipsis;
+                    if (fontSize > 0f) el.text.fontSize = fontSize;
                 }
+
+                // 窄按钮（< >）：把机械风默认的 12px 左右内边距压掉，否则内容区只剩几像素、字被省略
+                if (compact && el.root != null)
+                {
+                    UnityEngine.UI.HorizontalLayoutGroup group =
+                        el.root.GetComponent<UnityEngine.UI.HorizontalLayoutGroup>();
+                    if (group != null) group.padding = new RectOffset(2, 2, 0, 0);
+                }
+
                 if (!enabled) el.SetInteractable(false);
                 if (!string.IsNullOrEmpty(tooltip))
                 {
@@ -552,6 +631,13 @@ namespace QoL
                 layout.minHeight = height;
                 layout.preferredHeight = height;
             }
+        }
+
+        private static void Tip(CustomUIElement el, string text)
+        {
+            if (el == null || string.IsNullOrEmpty(text)) return;
+            try { el.SetTooltip(text); }
+            catch { }
         }
 
         private static CustomUIElement SetAlignment(this CustomUIElement el, HorizontalAlignmentOptions align)

@@ -154,6 +154,8 @@ namespace QoL
         internal int Tier;             // 0..5
         internal bool Counterfeit;
         internal int Count;            // 当前分法分到的瓶数
+        internal int Max;              // 材料全给这一档最多能做几瓶（界面上的上限）
+        internal int Want = -1;        // 界面上用户自己选的瓶数（-1 = 还没设过）
         internal bool Feasible;        // 材料够不够单独做一瓶
         internal int ScoreMin;
         internal int ScoreMax;
@@ -279,14 +281,16 @@ namespace QoL
             int total = 0;
             for (int i = 0; i < rows.Count; i++) total += rows[i].Count;
 
-            // 2) 没分到的档位再单独探一次：够不够做一瓶、配方长什么样
+            // 2) 每一档都单独探一次：材料全给它最多能做几瓶、配方长什么样
             for (int i = 0; i < rows.Count; i++)
             {
                 BrewTierRow row = rows[i];
-                if (row.Count > 0) { row.Feasible = true; continue; }
 
                 BrewCombo sample;
                 int max = Probe(stock, row.Tier, row.Counterfeit, out sample);
+                row.Max = max;
+
+                if (row.Count > 0) { row.Feasible = true; continue; }
 
                 row.Feasible = max > 0;
                 if (row.Feasible)

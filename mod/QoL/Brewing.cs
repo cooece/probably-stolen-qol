@@ -178,19 +178,19 @@ namespace QoL
             MarkDirty(0.25f);
         }
 
-        /// <summary>酿某一档：分到几瓶就酿几瓶；一瓶没分到但材料够，就单独酿一瓶。</summary>
+        /// <summary>酿某一档：酿界面上选好的瓶数。</summary>
         internal static void BrewTier(BrewTierRow row)
         {
-            int want = row == null ? 0 : (row.Count > 0 ? row.Count : (row.Feasible ? 1 : 0));
+            int want = row == null ? 0 : Math.Max(0, row.Want);
             if (row == null || row.Sample == null || want <= 0)
             {
-                Notify("这一档现在酿不了");
+                Notify("这一档还没选瓶数，或者材料不够");
                 return;
             }
 
             int done = 0;
             string why = null;
-            for (int i = 0; i < want; i++)
+            for (int i = 0; i < want && done < MaxPerClick; i++)
             {
                 string one;
                 if (!BrewOne(row.Sample, BrewScan.Scan(), out one)) { why = one; break; }
@@ -198,7 +198,7 @@ namespace QoL
             }
 
             if (done == 0) Notify("没酿成：" + why);
-            else if (done < want) Notify("已酿 " + done + " 瓶，" + why);
+            else if (done < want) Notify("已酿 " + done + " 瓶（" + (why ?? "单次上限") + "）");
             else Notify("已下料 " + done + " 瓶「" + row.Name + "」");
 
             QLog.Info("[酿酒] 按档酿造：" + row.Name + " 目标 " + want + " 瓶，实际 " + done + " 瓶" +
@@ -207,7 +207,7 @@ namespace QoL
             MarkDirty(0.3f);
         }
 
-        /// <summary>一键酿造：按表格从上到下，把每一档的可酿瓶数全酿了。</summary>
+        /// <summary>一键酿造：按表格从上到下，把每一档选好的瓶数全酿了。</summary>
         internal static void BrewEverything(List<BrewTierRow> rows)
         {
             if (rows == null) return;
@@ -218,9 +218,9 @@ namespace QoL
             for (int r = 0; r < rows.Count && done < MaxPerClick; r++)
             {
                 BrewTierRow row = rows[r];
-                if (row == null || row.Count <= 0 || row.Sample == null) continue;
+                if (row == null || row.Want <= 0 || row.Sample == null) continue;
 
-                for (int i = 0; i < row.Count && done < MaxPerClick; i++)
+                for (int i = 0; i < row.Want && done < MaxPerClick; i++)
                 {
                     string one;
                     if (!BrewOne(row.Sample, BrewScan.Scan(), out one)) { why = one; break; }
