@@ -125,6 +125,33 @@ namespace QoL
             for (int i = 0; i < Waters.Count; i++) n += Waters[i].Ml / 749;
             return n;
         }
+
+        /// <summary>某一档水一共有多少毫升。</summary>
+        internal int WaterMl(int tier)
+        {
+            int n = 0;
+            for (int i = 0; i < Waters.Count; i++)
+            {
+                if (Waters[i].Tier == tier) n += Waters[i].Ml;
+            }
+            return n;
+        }
+
+        /// <summary>某一档水最多还能灌几瓶。</summary>
+        internal int WaterBottles(int tier)
+        {
+            return WaterMl(tier) / BrewScan.WaterPerBottle;
+        }
+
+        internal BrewYeast Yeast(string id)
+        {
+            if (string.IsNullOrEmpty(id)) return null;
+            for (int i = 0; i < Yeasts.Count; i++)
+            {
+                if (string.Equals(Yeasts[i].Id, id, StringComparison.Ordinal)) return Yeasts[i];
+            }
+            return null;
+        }
     }
 
     /// <summary>

@@ -4,11 +4,17 @@ using System.Text;
 
 namespace QoL
 {
-    /// <summary>酒的档位：名字直接取游戏本地化，价格按游戏公式（基础 100 + 品质修正）估算。</summary>
+    /// <summary>
+    /// 酒的档位（对应游戏 ItemConditionList 里的酒品品质）。
+    /// 名字取游戏本地化，价格按游戏公式估算。
+    /// </summary>
     internal static class WineGrade
     {
         internal const string CounterfeitName = "阴光莓果酿";
         internal const int CounterfeitPrice = 44;
+
+        /// <summary>游戏里 wineScore &gt;= 6 就封顶在同一档，再多分也不会更值钱。</summary>
+        internal const int TopScore = 6;
 
         private static string[] _names;
 
@@ -40,34 +46,112 @@ namespace QoL
             return fallback;
         }
 
+        /// <summary>品质档：5 = 臻品，4 = 珍藏，3 = 量产，2 = 自酿，1 = 桶酿，0 = 不能喝。</summary>
+        internal static int TierOf(int score)
+        {
+            if (score >= 6) return 5;
+            if (score == 5) return 4;
+            if (score >= 3) return 3;
+            if (score == 2) return 2;
+            if (score == 1) return 1;
+            return 0;
+        }
+
         internal static string NameOf(int score)
         {
             string[] n = Names;
-            if (score >= 6) return n[0];
-            if (score == 5) return n[1];
-            if (score >= 3) return n[2];
-            if (score == 2) return n[3];
-            if (score == 1) return n[4];
-            return n[5];
+            switch (TierOf(score))
+            {
+                case 5: return n[0];
+                case 4: return n[1];
+                case 3: return n[2];
+                case 2: return n[3];
+                case 1: return n[4];
+                default: return n[5];
+            }
         }
 
         internal static int PriceOf(int score)
         {
-            if (score >= 6) return 175;
-            if (score == 5) return 150;
-            if (score >= 3) return 125;
-            if (score == 2) return 100;
-            if (score == 1) return 85;
-            return 0;
+            switch (TierOf(score))
+            {
+                case 5: return 175;
+                case 4: return 150;
+                case 3: return 125;
+                case 2: return 100;
+                case 1: return 85;
+                default: return 0;
+            }
         }
 
         /// <summary>列表里的分数颜色：越高越显眼。</summary>
         internal static UnityEngine.Color ColorOf(int score)
         {
-            if (score >= 6) return new UnityEngine.Color(0.925f, 0.78f, 0.35f);   // 金
-            if (score == 5) return new UnityEngine.Color(0.75f, 0.60f, 0.95f);    // 紫
-            if (score >= 3) return new UnityEngine.Color(0.55f, 0.78f, 0.95f);    // 蓝
-            return new UnityEngine.Color(0.72f, 0.71f, 0.68f);                    // 灰
+            switch (TierOf(score))
+            {
+                case 5: return new UnityEngine.Color(0.925f, 0.78f, 0.35f);   // 金
+                case 4: return new UnityEngine.Color(0.75f, 0.60f, 0.95f);    // 紫
+                case 3: return new UnityEngine.Color(0.55f, 0.78f, 0.95f);    // 蓝
+                default: return new UnityEngine.Color(0.72f, 0.71f, 0.68f);   // 灰
+            }
+        }
+    }
+
+    /// <summary>
+    /// 评分。完全照抄游戏 WineHelper.StartFermentation：
+    ///   分数 = Σ 每颗果实的品相（优质 +2 / 普通 +1 / 干瘪 0 / 发霉 -1）
+    ///        + 放了两颗以上再 +1
+    ///        + 有酵母 +1
+    ///        + 水质修正（纯·优 +1 / 基础 0 / 幽灵 -1 / 铁锈 -2 / 沟渠 -3）
+    /// 酵母种类**不影响分数**，只影响发酵要几夜（力量 2 = 两夜，4 = 一夜）。
+    /// </summary>
+    internal static class BrewScore
+    {
+        internal static int Of(IList<int> grades, bool hasYeast, int waterTier)
+        {
+            int score = 0;
+            for (int i = 0; i < grades.Count; i++) score += BerryGrade.Score(grades[i]);
+            if (grades.Count >= 2) score++;
+            if (hasYeast) score++;
+            score += BrewScan.WaterScore(waterTier);
+            return score;
+        }
+
+        /// <summary>发酵要几夜：初始 4，每晚按酵母力量递减。</summary>
+        internal static int Days(int yeastPower)
+        {
+            int power = yeastPower > 0 ? yeastPower : 1;
+            return (4 + power - 1) / power;
+        }
+    }
+
+    /// <summary>一次酿造要用的搭配：果子（按品相列）、酵母、水质。</summary>
+    internal sealed class BrewCombo
+    {
+        internal readonly List<int> Grades = new List<int>();
+        internal string YeastId = string.Empty;   // 空 = 自动
+        internal int WaterTier = -1;              // -1 = 自动
+        internal bool Counterfeit;
+
+        internal string BerryText
+        {
+            get
+            {
+                if (Counterfeit) return "不加果实";
+                if (Grades.Count == 0) return "没选果实";
+
+                int[] counts = new int[4];
+                for (int i = 0; i < Grades.Count; i++) counts[Grades[i]]++;
+
+                StringBuilder sb = new StringBuilder();
+                for (int g = 0; g < 4; g++)
+                {
+                    if (counts[g] <= 0) continue;
+                    if (sb.Length > 0) sb.Append("+");
+                    sb.Append(BerryGrade.Label[g]).Append('×').Append(counts[g]);
+                }
+                return sb.ToString();
+            }
         }
     }
 
@@ -104,9 +188,23 @@ namespace QoL
 
         internal bool Counterfeit { get { return Recipe != null && Recipe.Counterfeit; } }
         internal string WineName { get { return Counterfeit ? WineGrade.CounterfeitName : WineGrade.NameOf(Score); } }
-        internal int Price { get { return Counterfeit ? WineGrade.CounterfeitPrice : WineGrade.PriceOf(Score); } }
-        internal string WaterName { get { return Water != null ? Water.Name : "?"; } }
         internal string YeastName { get { return Yeast != null ? Yeast.Name : "无酵母"; } }
+        internal string WaterName { get { return Water != null ? Water.Name : "?"; } }
+
+        internal BrewCombo ToCombo()
+        {
+            BrewCombo combo = new BrewCombo();
+            combo.Counterfeit = Counterfeit;
+            combo.YeastId = Yeast != null ? Yeast.Id : string.Empty;
+            combo.WaterTier = Water != null ? Water.Tier : -1;
+
+            if (!Counterfeit && Recipe != null)
+            {
+                if (Recipe.BerryA >= 0) combo.Grades.Add(Recipe.BerryA);
+                if (Recipe.TwoBerry) combo.Grades.Add(Recipe.BerryB);
+            }
+            return combo;
+        }
     }
 
     internal sealed class BrewGroup
@@ -114,16 +212,12 @@ namespace QoL
         internal string Key;
         internal BrewPlan Sample;
         internal int Count;
-        internal int TotalPrice { get { return Sample != null ? Sample.Price * Count : 0; } }
     }
 
     /// <summary>
     /// 配方与推荐。
-    ///
-    /// 配方表来自游戏真实公式（WineHelper.StartFermentation）：
-    ///   分数 = Σ 果实品相（小果 2 / 标准 1 / 未熟 0 / 发霉 -1）
-    ///        + 双果 1 + 有酵母 1 + 水质修正（纯·优 +1 / 基础 0 / 幽灵 -1 / 铁锈 -2 / 沟渠 -3）
-    /// 所以上限 7 分（小果×2 + 优纯水 + 酵母）。
+    /// 顺序原则：先榨高分配方（6 分档先配「普通+优质」，能省下一颗优质果再冲 7 分），
+    /// 再逐级降档，最后才用脏水 + 合成酵母做走私酒。
     /// </summary>
     internal static class BrewPlanner
     {
@@ -133,7 +227,7 @@ namespace QoL
 
         private static readonly BrewRecipe[] Table =
         {
-            Make("7a", BerryGrade.Small,    BerryGrade.Small,    WaterBest,  7),
+            Make("7",  BerryGrade.Small,    BerryGrade.Small,    WaterBest,  7),
             Make("6a", BerryGrade.Standard, BerryGrade.Small,    WaterBest,  6),
             Make("6b", BerryGrade.Small,    BerryGrade.Small,    WaterPlain, 6),
             Make("5a", BerryGrade.Standard, BerryGrade.Standard, WaterBest,  5),
@@ -143,7 +237,7 @@ namespace QoL
             Make("3a", BerryGrade.Waste,    BerryGrade.Waste,    WaterBest,  3),
             Make("3b", BerryGrade.Standard, -1,                  WaterBest,  3),
             Make("3c", BerryGrade.Small,    -1,                  WaterPlain, 3),
-            Make("X1", -1,                  -1,                  WaterDirty, 3, true)
+            Make("X",  -1,                  -1,                  WaterDirty, 3, true)
         };
 
         private static BrewRecipe Make(string id, int a, int b, int[] tiers, int score, bool fake = false)
@@ -158,19 +252,17 @@ namespace QoL
             return r;
         }
 
-        /// <summary>酿造顺序：先榨干高分配方，再降档。同一档里小果先配标准果，能省出小果再冲 7 分。</summary>
         private static readonly string[][] Phases =
         {
-            new[] { "6a", "6b" },   // 备用：7a（两个小果 + 好水）
+            new[] { "6a", "6b" },   // 备用：7（两颗优质）
             new[] { "5a", "5b" },
             new[] { "4a", "4b" },
             new[] { "3a", "3b", "3c" },
-            new[] { "X1" }
+            new[] { "X" }
         };
 
-        private static readonly string[] PhaseFirstFallback = { "7a", null, null, null, null };
+        private static readonly string[] PhaseFallback = { "7", null, null, null, null };
 
-        /// <summary>本次规划用的预算：瓶、果、水、酵母都会被扣减。</summary>
         private sealed class Budget
         {
             internal int Bottles;
@@ -178,7 +270,7 @@ namespace QoL
             internal readonly List<BrewWater> Waters = new List<BrewWater>();
             internal readonly List<BrewYeast> Yeasts = new List<BrewYeast>();
 
-            internal Budget(BrewStock stock)
+            internal Budget(BrewStock stock, int tierFilter)
             {
                 Bottles = stock.EmptyBottles.Count;
 
@@ -191,6 +283,8 @@ namespace QoL
                 for (int i = 0; i < stock.Waters.Count; i++)
                 {
                     BrewWater w = stock.Waters[i];
+                    if (tierFilter >= 0 && w.Tier != tierFilter) continue;
+
                     BrewWater copy = new BrewWater();
                     copy.Item = w.Item;
                     copy.Name = w.Name;
@@ -205,9 +299,9 @@ namespace QoL
         }
 
         /// <summary>
-        /// 出推荐方案。note 里是「一共几瓶、合计多少」或「为什么一瓶都酿不了」。
+        /// 出推荐方案。waterTier &gt;= 0 时只用水质等于它的水（玩家手动挑了水质）。
         /// </summary>
-        internal static List<BrewPlan> Recommend(BrewStock stock, string preferredYeast, out string note)
+        internal static List<BrewPlan> Recommend(BrewStock stock, string preferredYeast, int waterTier, out string note)
         {
             List<BrewPlan> plans = new List<BrewPlan>();
             note = string.Empty;
@@ -218,18 +312,19 @@ namespace QoL
                 return plans;
             }
 
-            Budget budget = new Budget(stock);
-            if (budget.Bottles <= 0)
+            if (stock.EmptyBottles.Count <= 0)
             {
                 note = stock.WineBottles.Count > 0
-                    ? "没有空酒瓶了（已有的酒瓶都装着酒）。"
-                    : "没有空酒瓶，先买或做几个。";
+                    ? "没有空酒瓶了（现有的瓶都装着酒）。"
+                    : "没有空酒瓶，先弄几个。";
                 return plans;
             }
 
+            Budget budget = new Budget(stock, waterTier);
+
             for (int i = 0; i < Phases.Length; i++)
             {
-                string fallback = PhaseFirstFallback[i];
+                string fallback = PhaseFallback[i];
                 while (true)
                 {
                     BrewPlan plan = FirstFit(budget, Phases[i], preferredYeast);
@@ -243,38 +338,28 @@ namespace QoL
 
             if (plans.Count == 0)
             {
-                note = Explain(stock);
+                note = Explain(stock, waterTier);
                 return plans;
             }
 
-            int total = 0;
             int fake = 0;
-            for (int i = 0; i < plans.Count; i++)
-            {
-                total += plans[i].Price;
-                if (plans[i].Counterfeit) fake++;
-            }
+            for (int i = 0; i < plans.Count; i++) if (plans[i].Counterfeit) fake++;
 
             StringBuilder sb = new StringBuilder();
-            sb.Append("可酿 ").Append(plans.Count).Append(" 瓶 · 约 ").Append(total).Append(" 信用点");
-            if (fake > 0) sb.Append("（含走私酒 ").Append(fake).Append(" 瓶）");
+            sb.Append("可酿 ").Append(plans.Count).Append(" 瓶");
+            if (fake > 0) sb.Append("（含走私 ").Append(fake).Append(" 瓶）");
             note = sb.ToString();
             return plans;
         }
 
-        private static string Explain(BrewStock stock)
+        private static string Explain(BrewStock stock, int waterTier)
         {
             int berries = stock.BerryTotal();
-            bool cleanWater = false;
-            for (int i = 0; i < stock.Waters.Count; i++)
-            {
-                if (stock.Waters[i].Tier <= 2) { cleanWater = true; break; }
-            }
-
-            if (berries == 0 && stock.BerryCount(BerryGrade.Mold) > 0) return "荧光莓都发霉了，酿不出好酒。";
+            if (berries == 0 && stock.BerryCount(BerryGrade.Mold) > 0) return "荧光莓全发霉了。";
             if (berries == 0) return "没有荧光莓（发霉的不算）。";
-            if (stock.Yeasts.Count == 0) return "没有酵母 —— 缺了酵母会掉档，先补酵母。";
-            if (!cleanWater) return "没有干净的水（要有 ≥749ml 的纯水/优质水/基础水）。";
+            if (stock.Yeasts.Count == 0) return "没有酵母：缺了酵母会掉一档。";
+            if (stock.Waters.Count == 0) return "没有够一瓶（≥749ml）的水。";
+            if (waterTier >= 0) return "你选的水质凑不出配方，换一种水质试试。";
             return "现有材料凑不出 3 分以上的配方。";
         }
 
@@ -284,7 +369,6 @@ namespace QoL
             {
                 BrewRecipe recipe = Find(ids[i]);
                 if (recipe == null) continue;
-
                 BrewPlan plan = TryMake(budget, recipe, preferredYeast);
                 if (plan != null) return plan;
             }
@@ -361,7 +445,6 @@ namespace QoL
             return null;
         }
 
-        /// <summary>酵母：优先玩家指定的，其次无限酵母 → 超级酵母 → 普通酵母，最后随便挑力量最高的。</summary>
         private static BrewYeast PickYeast(List<BrewYeast> list, string preferred)
         {
             if (!string.IsNullOrEmpty(preferred))
@@ -400,7 +483,6 @@ namespace QoL
             return null;
         }
 
-        /// <summary>相邻且配方/酵母/水完全一样的行合并成一条「酿 ×N」。</summary>
         internal static List<BrewGroup> Group(List<BrewPlan> plans)
         {
             List<BrewGroup> groups = new List<BrewGroup>();
@@ -409,7 +491,8 @@ namespace QoL
             for (int i = 0; i < plans.Count; i++)
             {
                 BrewPlan plan = plans[i];
-                string key = plan.Recipe.Id + "|" + (plan.Yeast != null ? plan.Yeast.Id : "-") + "|" + plan.WaterName;
+                string key = plan.Recipe.Id + "|" + (plan.Yeast != null ? plan.Yeast.Id : "-") +
+                             "|" + (plan.Water != null ? plan.Water.Name : "-");
 
                 if (groups.Count > 0 && groups[groups.Count - 1].Key == key)
                 {

@@ -1,11 +1,11 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using UnityEngine;
 
 namespace QoL
 {
     /// <summary>
-    /// 酿酒工坊：热键开面板、按推荐方案自动装料并启动发酵。
+    /// 酿酒工坊：热键开面板、按选定的搭配自动装料并启动发酵。
     ///
     /// 全部走游戏公开接口，不打补丁：
     ///   装果实/酵母  → GraphUtils.TryAcceptOnce(瓶, 物, 1)，装完核对瓶里的子物品数
@@ -17,7 +17,7 @@ namespace QoL
     {
         internal const string Off = "关闭";
 
-        /// <summary>一次「一键酿完」最多开几瓶，防止手滑把库存全烧了。</summary>
+        /// <summary>一次「一键酿造」最多开几瓶，防止手滑把库存全烧了。</summary>
         internal const int MaxPerClick = 20;
 
         private static bool _applied;
@@ -124,7 +124,7 @@ namespace QoL
             return Input.GetKeyDown(key);
         }
 
-        /// <summary>界面上显示的当前热键名（「未设置」表示功能关着）。</summary>
+        /// <summary>界面上显示的当前热键名（null 表示功能关着）。</summary>
         internal static string HotkeyName
         {
             get
@@ -150,7 +150,6 @@ namespace QoL
                 return true;
             }
 
-            // 有别的功能正在等按键时，别抢
             try
             {
                 if (QuickShelf.IsCapturing || QuickToolHotkey.IsCapturing) return true;
@@ -164,51 +163,59 @@ namespace QoL
         // 对外操作
         // ---------------------------------------------------------------
 
-        /// <summary>酿一行：all=true 这一行全酿，false 只酿一瓶。</summary>
-        internal static void BrewGroup(BrewGroup group, bool all)
+        /// <summary>按指定搭配酿一瓶。</summary>
+        internal static void BrewSingle(BrewCombo combo)
         {
-            if (group == null || group.Sample == null) return;
+            if (combo == null) return;
 
-            int want = all ? group.Count : 1;
-            int done = 0;
-            string why = null;
+            string why;
+            bool ok = BrewOne(combo, BrewScan.Scan(), out why);
 
-            for (int i = 0; i < want; i++)
-            {
-                BrewStock stock = BrewScan.Scan();
-                if (!BrewOne(group.Sample, stock, out why)) break;
-                done++;
-            }
+            if (ok) Brewing.Notify("已下料：" + Describe(combo));
+            else Brewing.Notify("没酿成：" + why);
 
-            if (done == 0) Notify("没酿成：" + why);
-            else if (done < want) Notify("已启动 " + done + " 瓶，" + why);
-            else Notify("已启动 " + done + " 瓶发酵");
-
-            QLog.Info("[酿酒] 按行酿造：目标 " + want + " 瓶，实际 " + done + " 瓶" + (why != null ? "（" + why + "）" : string.Empty));
-
+            QLog.Info("[酿酒] 手动酿一瓶：" + Describe(combo) + (ok ? " → 成功" : " → 失败（" + why + "）"));
             MarkDirty(0.25f);
         }
 
-        /// <summary>一键酿完：每酿一瓶重新规划一次，材料变了也能接着用剩下的。</summary>
-        internal static void BrewAll()
+        /// <summary>
+        /// 一键酿造。
+        /// autoMode=true：按推荐方案逐瓶酿（发霉果不参与、只用干净水）。
+        /// autoMode=false：反复酿玩家上面选的那套，材料用完为止。
+        /// </summary>
+        internal static void BrewAll(bool autoMode, BrewCombo manual, int waterTier)
         {
-            string preferred = BrewWindow.PreferredYeast;
             int done = 0;
             string why = null;
 
             for (int i = 0; i < MaxPerClick; i++)
             {
                 BrewStock stock = BrewScan.Scan();
-                string note;
-                List<BrewPlan> plans = BrewPlanner.Recommend(stock, preferred, out note);
-                if (plans.Count == 0)
+                BrewCombo combo;
+
+                if (autoMode)
                 {
-                    why = note;
-                    break;
+                    string note;
+                    List<BrewPlan> plans = BrewPlanner.Recommend(stock, BrewWindow.PreferredYeast, waterTier, out note);
+                    if (plans.Count == 0)
+                    {
+                        why = note;
+                        break;
+                    }
+                    combo = plans[0].ToCombo();
+                }
+                else
+                {
+                    if (manual == null || (!manual.Counterfeit && manual.Grades.Count == 0))
+                    {
+                        why = "自选搭配里还没放果子";
+                        break;
+                    }
+                    combo = manual;
                 }
 
                 string one;
-                if (!BrewOne(plans[0], stock, out one))
+                if (!BrewOne(combo, stock, out one))
                 {
                     why = one;
                     break;
@@ -216,11 +223,12 @@ namespace QoL
                 done++;
             }
 
-            if (done == 0) Notify("一键酿完没成功：" + why);
-            else if (done >= MaxPerClick) Notify("已启动 " + done + " 瓶，达到单次上限");
-            else Notify("一键酿完：已启动 " + done + " 瓶发酵");
+            if (done == 0) Notify("没酿成：" + why);
+            else if (done >= MaxPerClick) Notify("已启动 " + done + " 瓶（单次上限）");
+            else Notify("已启动 " + done + " 瓶发酵");
 
-            QLog.Info("[酿酒] 一键酿完：启动 " + done + " 瓶" + (why != null ? "，停下原因：" + why : string.Empty));
+            QLog.Info("[酿酒] 一键酿造（" + (autoMode ? "自动" : "自选") + "）：" + done + " 瓶" +
+                      (why != null ? "，停下原因：" + why : string.Empty));
 
             MarkDirty(0.3f);
         }
@@ -235,58 +243,52 @@ namespace QoL
         // 酿一瓶
         // ---------------------------------------------------------------
 
-        private static bool BrewOne(BrewPlan plan, BrewStock stock, out string why)
+        private static bool BrewOne(BrewCombo combo, BrewStock stock, out string why)
         {
             why = string.Empty;
-            if (plan == null || plan.Recipe == null)
-            {
-                why = "没有配方";
-                return false;
-            }
+            if (combo == null) { why = "没有搭配"; return false; }
+            if (stock == null) { why = "没读到库存"; return false; }
 
             GameItem bottle = FirstBottle(stock);
-            if (bottle == null)
-            {
-                why = "没有空酒瓶";
-                return false;
-            }
+            if (bottle == null) { why = "没有空酒瓶"; return false; }
 
-            GameItem water = PickWaterItem(stock, plan.Water);
+            int tier = combo.WaterTier >= 0 ? combo.WaterTier : BestWaterTier(stock);
+            GameItem water = tier >= 0 ? PickWaterItem(stock, tier) : null;
             if (water == null)
             {
-                why = "找不到 " + (plan.Water != null ? plan.Water.Name : "合适的水") + "（要 ≥749ml）";
+                why = "找不到" + (tier >= 0 ? BrewScan.TierName(tier) : "合适的水") + "（要 ≥749ml）";
                 return false;
             }
 
-            GameItem berryA = null;
-            GameItem berryB = null;
-            if (plan.Recipe.HasBerry)
+            GameItem yeast = PickYeastItem(stock, combo.YeastId, combo.Counterfeit);
+            if (yeast == null)
             {
-                if (!PickBerries(stock, plan.Recipe, out berryA, out berryB))
+                why = combo.Counterfeit ? "没有合成酵母（走私酒必须用它）" : "没有可用的酵母";
+                return false;
+            }
+
+            List<GameItem> berries = new List<GameItem>();
+            if (!combo.Counterfeit)
+            {
+                int[] used = new int[4];
+                for (int i = 0; i < combo.Grades.Count; i++)
                 {
-                    why = "荧光莓不够（要 " + plan.Recipe.BerryText + "）";
-                    return false;
+                    int grade = combo.Grades[i];
+                    GameItem berry = TakeBerry(stock, grade, used);
+                    if (berry == null)
+                    {
+                        why = "荧光莓不够（缺" + BerryGrade.Label[grade] + "）";
+                        return false;
+                    }
+                    berries.Add(berry);
                 }
             }
 
-            GameItem yeast = PickYeastItem(stock, plan.Yeast);
-            if (yeast == null)
-            {
-                why = plan.Counterfeit
-                    ? "没有合成酵母（走私酒必须用它）"
-                    : "没有可用的酵母";
-                return false;
-            }
-
             string how;
-            if (berryA != null && !LoadInto(bottle, berryA, out how))
+            for (int i = 0; i < berries.Count; i++)
             {
-                why = "果实放不进瓶：" + how;
-                return false;
-            }
-            if (berryB != null && !LoadInto(bottle, berryB, out how))
-            {
-                why = "第二颗果放不进瓶：" + how;
+                if (LoadInto(bottle, berries[i], out how)) continue;
+                why = "第 " + (i + 1) + " 颗果放不进瓶：" + how;
                 return false;
             }
 
@@ -313,9 +315,17 @@ namespace QoL
                 return false;
             }
 
-            QLog.Info("[酿酒] 开瓶：" + plan.WineName + " " + plan.Score + " 分，水=" + plan.WaterName +
-                      "，酵母=" + plan.YeastName + "，累计 " + BrewScan.ChildCount(bottle) + " 个子物品");
+            int score = BrewScan.TagIntOn(bottle, "WINE_SCORE_INT");
+            QLog.Info("[酿酒] 开瓶：" + (combo.Counterfeit ? "走私酒" : WineGrade.NameOf(score)) +
+                      " " + score + " 分 · 果实=" + combo.BerryText + " · 水=" + BrewScan.TierName(tier) +
+                      " · 酵母=" + BrewScan.Display(yeast));
             return true;
+        }
+
+        private static string Describe(BrewCombo combo)
+        {
+            return combo.BerryText + " + " + (combo.WaterTier >= 0 ? BrewScan.TierName(combo.WaterTier) : "自动水") +
+                   " + " + (string.IsNullOrEmpty(combo.YeastId) ? "自动酵母" : "指定酵母");
         }
 
         private static GameItem FirstBottle(BrewStock stock)
@@ -327,57 +337,74 @@ namespace QoL
             return null;
         }
 
-        private static GameItem PickWaterItem(BrewStock stock, BrewWater like)
+        /// <summary>挑一颗指定品相的果子；used 记录这次已经用掉的颗数，避免同一颗被选两次。</summary>
+        private static GameItem TakeBerry(BrewStock stock, int grade, int[] used)
         {
-            if (like == null) return null;
+            BrewBerry stack = stock.Berry(grade);
+            if (stack == null) return null;
 
+            int index = used[grade];
+            if (index >= stack.Items.Count) return null;
+
+            used[grade] = index + 1;
+            return stack.Items[index];
+        }
+
+        /// <summary>能用的水质里最好的那一档（0 最纯）。</summary>
+        internal static int BestWaterTier(BrewStock stock)
+        {
+            for (int tier = 0; tier <= 5; tier++)
+            {
+                for (int i = 0; i < stock.Waters.Count; i++)
+                {
+                    if (stock.Waters[i].Tier == tier && stock.Waters[i].Ml >= BrewScan.WaterPerBottle) return tier;
+                }
+            }
+            return -1;
+        }
+
+        private static GameItem PickWaterItem(BrewStock stock, int tier)
+        {
             GameItem found = null;
             int best = 0;
             for (int i = 0; i < stock.Waters.Count; i++)
             {
                 BrewWater w = stock.Waters[i];
-                if (w.Tier != like.Tier || w.Ml < BrewScan.WaterPerBottle) continue;
+                if (w.Tier != tier || w.Ml < BrewScan.WaterPerBottle) continue;
                 if (found == null || w.Ml > best) { found = w.Item; best = w.Ml; }
             }
             return found;
         }
 
-        private static bool PickBerries(BrewStock stock, BrewRecipe recipe, out GameItem a, out GameItem b)
+        private static GameItem PickYeastItem(BrewStock stock, string id, bool synthetic)
         {
-            a = null;
-            b = null;
-
-            BrewBerry first = stock.Berry(recipe.BerryA);
-            if (first == null || first.Items.Count == 0) return false;
-            a = first.Items[0];
-
-            if (!recipe.TwoBerry) return true;
-
-            if (recipe.BerryB == recipe.BerryA)
-            {
-                if (first.Items.Count < 2) { a = null; return false; }
-                b = first.Items[1];
-                return true;
-            }
-
-            BrewBerry second = stock.Berry(recipe.BerryB);
-            if (second == null || second.Items.Count == 0) { a = null; return false; }
-            b = second.Items[0];
-            return true;
-        }
-
-        private static GameItem PickYeastItem(BrewStock stock, BrewYeast like)
-        {
-            if (like != null)
+            if (synthetic)
             {
                 for (int i = 0; i < stock.Yeasts.Count; i++)
                 {
                     BrewYeast y = stock.Yeasts[i];
-                    if (y.Id == like.Id && y.Items.Count > 0) return y.Items[0];
+                    if (y.Synthetic && y.Items.Count > 0) return y.Items[0];
                 }
+                return null;
+            }
 
-                // 走私酒只能用合成酵母：绝不能用普通酵母顶替，否则会酿出一瓶劣质酒
-                if (like.Synthetic) return null;
+            if (!string.IsNullOrEmpty(id))
+            {
+                for (int i = 0; i < stock.Yeasts.Count; i++)
+                {
+                    BrewYeast y = stock.Yeasts[i];
+                    if (y.Id == id && y.Items.Count > 0 && !y.Synthetic) return y.Items[0];
+                }
+            }
+
+            string[] order = { "wine_yeast_infinite", "wine_superyeast", "wine_yeast" };
+            for (int k = 0; k < order.Length; k++)
+            {
+                for (int i = 0; i < stock.Yeasts.Count; i++)
+                {
+                    BrewYeast y = stock.Yeasts[i];
+                    if (y.Id == order[k] && y.Items.Count > 0) return y.Items[0];
+                }
             }
 
             for (int i = 0; i < stock.Yeasts.Count; i++)
@@ -448,11 +475,10 @@ namespace QoL
             return null;
         }
 
-        /// <summary>倒水：一次 750ml。做完核对瓶里的毫升数真的涨了。</summary>
+        /// <summary>倒水：一次 750ml。做完核对瓶里的毫升数真的够一瓶。</summary>
         private static bool PourWater(GameItem bottle, GameItem water, out string how)
         {
             how = "没倒进去";
-            int before = BrewScan.Ml(bottle);
 
             try { WaterHelper.TransferLiquid(water, bottle); }
             catch (Exception e)
@@ -473,7 +499,7 @@ namespace QoL
 
             if (BrewScan.Ml(bottle) >= BrewScan.WaterPerBottle) { how = "初始化后补倒"; return true; }
 
-            how = "瓶里只有 " + BrewScan.Ml(bottle) + "ml（原 " + before + "ml）";
+            how = "瓶里只有 " + BrewScan.Ml(bottle) + "ml";
             return false;
         }
 
