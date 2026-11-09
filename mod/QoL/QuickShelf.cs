@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
@@ -41,7 +41,6 @@ namespace QoL
         private static bool _capturing;
         private static int _captureFrame = -1;
         private static TMP_InputField _captureField;
-        private static bool _captureFromPanel;
         private static bool _panelHooked;
 
         // 按键值缓存：CurrentKey 每帧被问一次，值不变就不重算
@@ -62,7 +61,6 @@ namespace QoL
         {
             try
             {
-                ItemContextMenu.RegisterProvider(ProvideContextMenu);
                 PatchSettingsInput();
                 QLog.Info("[一键上柜] 已挂载，当前按键 " + KeyDisplayName(CurrentKey));
         
@@ -75,10 +73,8 @@ namespace QoL
 
         internal static void Remove()
         {
-            ItemContextMenu.UnregisterProvider(ProvideContextMenu);
             _capturing = false;
             _captureField = null;
-            _captureFromPanel = false;
 
             if (_harmony != null)
             {
@@ -269,7 +265,7 @@ namespace QoL
                 if (_capturing)
                 {
                     // 设置面板被关掉时，输入框会先被销毁；这时候别继续等按键
-                    if (_captureFromPanel && _captureField == null)
+                    if (_captureField == null)
                     {
                         _capturing = false;
                         return;
@@ -445,37 +441,10 @@ namespace QoL
             catch { return "?"; }
         }
 
-        // ---------------------------------------------------------------
-        // 右键菜单：设定按键
-        // ---------------------------------------------------------------
-
-        private static void ProvideContextMenu(GameItem item, List<ItemMenuEntry> entries)
-        {
-            try
-            {
-                if (item == null) return;
-
-                // 就算当前是「关闭」也留着这一项，点一下录制就能重新启用
-                entries.Add(new ItemMenuEntry
-                {
-                    Key = "quick_shelf_bind",
-                    ElementName = "QolQuickShelfBind",
-                    Text = "设上柜键(" + KeyDisplayName(CurrentKey) + ")",
-                    OnClick = delegate { BeginCapture(null); }
-                });
-        
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[一键上柜台] 补丁出错：" + e.Message);
-            }
-        }
-
         private static void BeginCapture(TMP_InputField field)
         {
             _capturing = true;
             _captureField = field;
-            _captureFromPanel = field != null;
             _captureFrame = Time.frameCount;
             Notify("请按下要用的按键（右键或 Esc 取消）");
         }
@@ -530,14 +499,12 @@ namespace QoL
         {
             _capturing = false;
             _captureField = null;
-            _captureFromPanel = false;
             ClearSelection();
         }
 
         private static void Bind(KeyCode code)
         {
             _capturing = false;
-            _captureFromPanel = false;
 
             string name = KeyDisplayName(code);
 
