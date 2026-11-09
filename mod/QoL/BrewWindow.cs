@@ -64,11 +64,26 @@ namespace QoL
         private static bool _qualityFirst = true;
         private static bool _qualityLoaded;
 
-        /// <summary>每一档用户自己选的瓶数（key = 档位；走私酒用 100+tier）。</summary>
+        /// <summary>每一档用户自己选的瓶数（key = 档位；走私酒用 100+tier）。存的是用户原值，不随材料缩水。</summary>
         private static readonly Dictionary<int, int> _want = new Dictionary<int, int>();
 
         /// <summary>用户手动调过瓶数的档位：材料变动时不再自动跟随推荐。</summary>
         private static readonly HashSet<int> _touched = new HashSet<int>();
+
+        /// <summary>当前这次构建出来的行控件，供 < > 局部刷新（不重建窗口）。</summary>
+        private sealed class RowUi
+        {
+            internal BrewTierRow Row;
+            internal CustomUIElement Name;
+            internal CustomUIElement Less;
+            internal CustomUIElement Brew;
+            internal CustomUIElement More;
+        }
+
+        private static readonly List<RowUi> _rows = new List<RowUi>();
+        private static CustomUIElement _footerHint;
+        private static CustomUIElement _brewAll;
+        private static int _materialTotal;
 
         // ---------------------------------------------------------------
         // 对外
@@ -172,6 +187,11 @@ namespace QoL
             Remember(ui);
             if (ui.IsOpen(WindowId)) ui.CloseWindow(WindowId);
 
+            // 旧控件随窗口一起销毁，引用必须清掉，否则 < > 会改到已销毁的对象
+            _rows.Clear();
+            _footerHint = null;
+            _brewAll = null;
+
             BrewStock stock = BrewScan.Scan();
 
             string note;
@@ -185,6 +205,7 @@ namespace QoL
                 ApplyWant(rows[i]);
                 wantTotal += rows[i].Want;
             }
+            _materialTotal = total;
 
             CustomUIBuilder b = ui.CreateWindow(WindowId, Title, "overlay", null, CustomUIManager.Style.Machinery)
                 .SetSize(WinW, WinH)
@@ -377,10 +398,11 @@ namespace QoL
             Text(b, "分数", ColScore, 13f, DimColor);
             Text(b, "每瓶配方", ColRecipe, 13f, DimColor);
             Text(b, "发酵", ColDays, 13f, DimColor);
-            Tip(Text(b, "可酿", ColCount, 13f, DimColor),
-                "按当前分法分到的瓶数。材料是共用的，各档数字不能相加。");
+            Tip(Text(b, "最多", ColCount, 13f, DimColor),
+                "这一档材料全给它最多能做几瓶（也就是右边 < > 的上限）。" +
+                "各档共用同一批材料，所以只作参考、不能相加。");
             Tip(Text(b, "自选瓶数", ColAct, 13f, DimColor),
-                "用 < > 调这一档要酿几瓶（上限 = 材料全给它时能做多少），点中间的「酿 N」直接开酿。");
+                "用 < > 调这一档要酿几瓶，点中间的「酿 N」直接开酿。");
             b.End();
 
             b.BeginColumn(Pad, TextAnchor.UpperLeft);
@@ -403,24 +425,39 @@ namespace QoL
             Text(b, row.RecipeText, ColRecipe, 14f, dim);
             Text(b, row.DaysText, ColDays, 14f, dim);
 
-            if (row.Count > 0) Text(b, "×" + row.Count, ColCount, 16f, GoldColor);
-            else if (row.Feasible) Text(b, "0", ColCount, 15f, DimColor);
-            else Text(b, "—", ColCount, 15f, DimColor);
+            if (row.Max > 0)
+            {
+                Text(b, row.Max.ToString(), ColCount, 15f,
+                    row.Count > 0 ? GoldColor : (row.Feasible ? Value : DimColor));
+            }
+            else
+            {
+                Text(b, "—", ColCount, 15f, DimColor);
+            }
 
             // 操作列：< 酿N >（自己选瓶数，点中间直接酿）
             BrewTierRow captured = row;
             bool canBrew = row.Want > 0;
 
-            Button(b, "<", ArrowW, delegate { Adjust(captured, -1); }, canBrew,
+            RowUi ui = new RowUi();
+            ui.Row = row;
+            ui.Name = name;
+            _rows.Add(ui);
+
+            ui.Less = Button(b, "<", ArrowW, delegate { Adjust(captured, -1); }, canBrew,
                 "少酿一瓶", 16f, true);
-            Button(b, row.Want > 0 ? "酿 " + row.Want : "酿", BrewW, delegate { Brewing.BrewTier(captured); }, canBrew,
-                canBrew
-                    ? "按这一档的配方，一次酿 " + row.Want + " 瓶（最多 " + row.Max + " 瓶）"
-                    : (row.Reason ?? "这一档现在做不出来"), 15f, true);
-            Button(b, ">", ArrowW, delegate { Adjust(captured, 1); }, row.Want < row.Max,
+            ui.Brew = Button(b, row.Want > 0 ? "酿 " + row.Want : "酿", BrewW,
+                delegate { Brewing.BrewTier(captured); }, canBrew, BrewTip(row), 15f, true);
+            ui.More = Button(b, ">", ArrowW, delegate { Adjust(captured, 1); }, row.Want < row.Max,
                 row.Want >= row.Max ? "材料最多做到 " + row.Max + " 瓶" : "多酿一瓶", 16f, true);
 
             b.End();
+        }
+
+        private static string BrewTip(BrewTierRow row)
+        {
+            if (row.Want <= 0) return row.Reason ?? "这一档现在做不出来";
+            return "按这一档的配方，一次酿 " + row.Want + " 瓶（这一档最多 " + row.Max + " 瓶）";
         }
 
         // ---------------------------------------------------------------
@@ -438,31 +475,82 @@ namespace QoL
             int key = RowKey(row);
 
             int want;
-            if (_touched.Contains(key))
+            if (!_touched.Contains(key) || !_want.TryGetValue(key, out want))
             {
-                if (!_want.TryGetValue(key, out want)) want = 0;
-            }
-            else
-            {
+                // 没手动调过的档位每次都跟着推荐走：材料一变就重新播种
                 want = row.Count > 0 ? row.Count : (row.Feasible ? 1 : 0);
+                _want[key] = want;
             }
 
-            want = Mathf.Clamp(want, 0, Math.Max(0, row.Max));
-            _want[key] = want;
-            row.Want = want;
+            // 只压「显示值」，不覆盖用户设的原值 —— 材料临时变少再变多时能回到原来的数字
+            row.Want = Mathf.Clamp(want, 0, Math.Max(0, row.Max));
         }
 
         private static void Adjust(BrewTierRow row, int delta)
         {
             int key = RowKey(row);
-            int want;
-            if (!_want.TryGetValue(key, out want)) want = row.Want;
 
-            want = Mathf.Clamp(want + delta, 0, Math.Max(0, row.Max));
+            int want = Mathf.Clamp(row.Want + delta, 0, Math.Max(0, row.Max));
             _want[key] = want;
             _touched.Add(key);
+            row.Want = want;
 
-            Brewing.Rescan();
+            // 只刷这一屏的数字和按钮状态，不重建窗口（重建会闪、连点会丢）
+            RefreshWants();
+        }
+
+        /// <summary>局部刷新：所有行的「酿 N」、左右箭头的可用状态、底部统计，都不重建窗口。</summary>
+        private static void RefreshWants()
+        {
+            int wantTotal = 0;
+
+            for (int i = 0; i < _rows.Count; i++)
+            {
+                RowUi ui = _rows[i];
+                BrewTierRow row = ui.Row;
+                if (row == null) continue;
+
+                bool canBrew = row.Want > 0;
+                wantTotal += row.Want;
+
+                if (ui.Brew != null)
+                {
+                    ui.Brew.SetText(row.Want > 0 ? "酿 " + row.Want : "酿");
+                    ui.Brew.SetInteractable(canBrew);
+                    Tip(ui.Brew, BrewTip(row));
+                }
+
+                if (ui.Name != null) Tip(ui.Name, RowTip(row));
+
+                if (ui.Less != null) ui.Less.SetInteractable(canBrew);
+
+                if (ui.More != null)
+                {
+                    ui.More.SetInteractable(row.Want < row.Max);
+                    Tip(ui.More, row.Want >= row.Max ? "材料最多做到 " + row.Max + " 瓶" : "多酿一瓶");
+                }
+            }
+
+            bool over = wantTotal > _materialTotal;
+
+            if (_footerHint != null)
+            {
+                _footerHint.SetText(FooterText(wantTotal, over));
+                if (_footerHint.text != null) _footerHint.text.color = over ? BadColor : DimColor;
+            }
+
+            if (_brewAll != null)
+            {
+                _brewAll.SetText(wantTotal > 0 ? "一键酿造（" + wantTotal + " 瓶）" : "一键酿造");
+                _brewAll.SetInteractable(wantTotal > 0);
+            }
+        }
+
+        private static string FooterText(int wantTotal, bool over)
+        {
+            return over
+                ? "已选 " + wantTotal + " 瓶，材料只够 " + _materialTotal + " 瓶 —— 超出的会酿失败"
+                : "已选 " + wantTotal + " 瓶（材料够 " + _materialTotal + " 瓶）　左右箭头调瓶数，点中间直接酿";
         }
 
         private static string RowTip(BrewTierRow row)
@@ -491,11 +579,8 @@ namespace QoL
             b.BeginRow(Gap, TextAnchor.MiddleLeft);
 
             bool over = wantTotal > total;
-            string hintText = over
-                ? "已选 " + wantTotal + " 瓶，材料只够 " + total + " 瓶 —— 超出的会酿失败"
-                : "已选 " + wantTotal + " 瓶（材料够 " + total + " 瓶）　左右箭头调瓶数，点中间直接酿";
 
-            CustomUIElement hint = Text(b, hintText, -1f, 13f, over ? BadColor : DimColor);
+            CustomUIElement hint = Text(b, FooterText(wantTotal, over), -1f, 13f, over ? BadColor : DimColor);
             if (hint != null)
             {
                 hint.SetFlexible(1f, 0f);
@@ -505,11 +590,12 @@ namespace QoL
                     hint.text.overflowMode = TextOverflowModes.Ellipsis;
                 }
             }
+            _footerHint = hint;
 
             Button(b, "刷新", 90f, Brewing.Rescan, true, "材料有变动（拿果子、倒水、做瓶）后点一下重新算");
 
             List<BrewTierRow> captured = rows;
-            Button(b, wantTotal > 0 ? "一键酿造（" + wantTotal + " 瓶）" : "一键酿造", 210f,
+            _brewAll = Button(b, wantTotal > 0 ? "一键酿造（" + wantTotal + " 瓶）" : "一键酿造", 210f,
                 delegate { Brewing.BrewEverything(captured); }, wantTotal > 0,
                 "按表格从上到下，把每一档选好的瓶数全酿了");
 
@@ -574,14 +660,14 @@ namespace QoL
             }
         }
 
-        private static void Button(CustomUIBuilder b, string text, float width, Action onClick, bool enabled,
+        private static CustomUIElement Button(CustomUIBuilder b, string text, float width, Action onClick, bool enabled,
             string tooltip = null, float fontSize = 0f, bool compact = false)
         {
             try
             {
                 b.AddButton(text, onClick, null);
                 CustomUIElement el = b.Last;
-                if (el == null) return;
+                if (el == null) return null;
 
                 FixSize(el, width, BtnH);
                 if (el.text != null)
@@ -607,10 +693,12 @@ namespace QoL
                     try { el.SetTooltip(tooltip); }
                     catch { }
                 }
+                return el;
             }
             catch (Exception e)
             {
                 QLog.Warn("[酿酒] 按钮「" + text + "」创建失败：" + e.GetType().Name);
+                return null;
             }
         }
 
