@@ -107,6 +107,9 @@ namespace QoL
         /// <summary>自动换滤芯：一个下拉同时管开关与时机（过夜检查 / 随时换）。</summary>
         internal ConfigEntry<string> AutoFilterSwapMode { get; }
 
+        /// <summary>酿酒工坊：一个下拉同时管开关与打开面板的按键。</summary>
+        internal ConfigEntry<string> BrewPanelKey { get; }
+
         internal int Count => _config.Entries.Count;
 
         internal string FilePath => _config.FilePath;
@@ -335,6 +338,15 @@ namespace QoL
                 () => "自动换滤芯",
                 new[] { AutoFilterSwap.Off, AutoFilterSwap.NightOnly, AutoFilterSwap.Always },
                 () => "水壶和鱼缸机器的滤芯用完自动换：干净的优先、同档先用耐久少的；过夜前算一下今晚够不够，不够提前换。换下来的旧滤芯放进装滤芯的箱子，没箱子放后仓。");
+
+            // ---------------- 酿酒 ----------------
+            BrewPanelKey = _config.Define(
+                "brew.panel_key",
+                "F3",
+                "酿酒",
+                () => "酿酒工坊",
+                new[] { Brewing.Off, "F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8" },
+                () => "按这个键打开酿酒面板：列出建议酿什么、能酿几瓶，点一下就自动装料发酵。选「关闭」则不启用。");
 
             // 把定义（可能带新的默认值）写回文件
             _config.Save();
