@@ -305,6 +305,7 @@ namespace QoL
         private static bool Blocked()
         {
             if (QuickToolHotkey.IsCapturing) return true;
+            if (Brewing.IsCapturing) return true;
 
             ItemMouseDragHandler drag = ItemMouseDragHandler.current;
             if (drag != null && drag.IsDraggingItem) return true;
