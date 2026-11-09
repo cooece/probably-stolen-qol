@@ -25,10 +25,10 @@ namespace QoL
         private const string WindowId = "qol.brew";
         private const string Title = "酿酒工坊";
 
-        private const float WinW = 880f;
+        private const float WinW = 840f;
 
-        /// <summary>外框 58 + 材料两行 + 分法 + 表头 + 七行 + 底栏 + 间距。</summary>
-        private const float WinH = 532f;
+        /// <summary>外框 58 + 材料两行 + 分法 + 表头 + 七行 + 底栏 + 间距，再留够底部空白。</summary>
+        private const float WinH = 566f;
 
         private const float Pad = 8f;
         private const float BtnH = 32f;
