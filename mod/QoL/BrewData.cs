@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
@@ -393,7 +393,7 @@ namespace QoL
 
         private static BrewWater TryWater(GameItem item, string id)
         {
-            if (IsNoDrawWater(id) || InsideNoDrawWater(item)) return null;
+            if (IsNoDrawWater(id, item) || InsideNoDrawWater(item)) return null;
 
             bool canUse = false;
             try { canUse = WaterHelper.CanUseWaterContainer(item); }
@@ -428,12 +428,32 @@ namespace QoL
             return water;
         }
 
-        private static bool IsNoDrawWater(string id)
+        /// <summary>船载水循环机 / 饮水机没设 identifier，只能按内部名认（当前版本未实装，防御性排除）。</summary>
+        private static readonly string[] NoDrawNames =
+        {
+            "Water Recycler System", "Water Fountain", "Paying Water Fountain"
+        };
+
+        private static bool IsNoDrawWater(string id, GameItem item)
         {
             for (int i = 0; i < NoDrawWater.Length; i++)
             {
                 if (string.Equals(id, NoDrawWater[i], StringComparison.Ordinal)) return true;
             }
+
+            try
+            {
+                string name = item != null ? item.name : null;
+                if (!string.IsNullOrEmpty(name))
+                {
+                    for (int i = 0; i < NoDrawNames.Length; i++)
+                    {
+                        if (string.Equals(name, NoDrawNames[i], StringComparison.Ordinal)) return true;
+                    }
+                }
+            }
+            catch { }
+
             return false;
         }
 
@@ -446,7 +466,7 @@ namespace QoL
                 {
                     GameItem parent = inv.GetParentItem();
                     if (parent == null) return false;
-                    if (IsNoDrawWater(Id(parent))) return true;
+                    if (IsNoDrawWater(Id(parent), parent)) return true;
                     inv = parent.parentInventory;
                 }
             }
