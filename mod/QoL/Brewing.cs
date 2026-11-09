@@ -178,10 +178,11 @@ namespace QoL
             MarkDirty(0.25f);
         }
 
-        /// <summary>酿某一档的全部（表格里那一行）。</summary>
+        /// <summary>酿某一档：分到几瓶就酿几瓶；一瓶没分到但材料够，就单独酿一瓶。</summary>
         internal static void BrewTier(BrewTierRow row)
         {
-            if (row == null || row.Sample == null || row.Count <= 0)
+            int want = row == null ? 0 : (row.Count > 0 ? row.Count : (row.Feasible ? 1 : 0));
+            if (row == null || row.Sample == null || want <= 0)
             {
                 Notify("这一档现在酿不了");
                 return;
@@ -189,7 +190,7 @@ namespace QoL
 
             int done = 0;
             string why = null;
-            for (int i = 0; i < row.Count; i++)
+            for (int i = 0; i < want; i++)
             {
                 string one;
                 if (!BrewOne(row.Sample, BrewScan.Scan(), out one)) { why = one; break; }
@@ -197,10 +198,10 @@ namespace QoL
             }
 
             if (done == 0) Notify("没酿成：" + why);
-            else if (done < row.Count) Notify("已酿 " + done + " 瓶，" + why);
+            else if (done < want) Notify("已酿 " + done + " 瓶，" + why);
             else Notify("已下料 " + done + " 瓶「" + row.Name + "」");
 
-            QLog.Info("[酿酒] 按档酿造：" + row.Name + " 目标 " + row.Count + " 瓶，实际 " + done + " 瓶" +
+            QLog.Info("[酿酒] 按档酿造：" + row.Name + " 目标 " + want + " 瓶，实际 " + done + " 瓶" +
                       (why != null ? "（" + why + "）" : string.Empty));
 
             MarkDirty(0.3f);

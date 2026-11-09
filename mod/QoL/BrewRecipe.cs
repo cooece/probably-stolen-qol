@@ -58,7 +58,6 @@ namespace QoL
             return 0;
         }
 
-        /// <summary>tier 5 → 琼浆玉液 …… tier 0 → 难以下咽。</summary>
         internal static string NameOfTier(int tier)
         {
             string[] n = Names;
@@ -72,7 +71,6 @@ namespace QoL
             return NameOfTier(TierOf(score));
         }
 
-        /// <summary>档位颜色：越高越显眼。</summary>
         internal static UnityEngine.Color ColorOfTier(int tier)
         {
             switch (tier)
@@ -124,8 +122,8 @@ namespace QoL
     internal sealed class BrewCombo
     {
         internal readonly List<int> Grades = new List<int>();
-        internal string YeastId = string.Empty;   // 空 = 自动
-        internal int WaterTier = -1;              // -1 = 自动
+        internal string YeastId = string.Empty;
+        internal int WaterTier = -1;
         internal bool Counterfeit;
 
         internal string BerryText
@@ -133,7 +131,7 @@ namespace QoL
             get
             {
                 if (Counterfeit) return "不加果实";
-                if (Grades.Count == 0) return "没选果实";
+                if (Grades.Count == 0) return "—";
 
                 int[] counts = new int[4];
                 for (int i = 0; i < Grades.Count; i++) counts[Grades[i]]++;
@@ -148,29 +146,20 @@ namespace QoL
                 return sb.ToString();
             }
         }
-
-        internal BrewCombo Clone()
-        {
-            BrewCombo c = new BrewCombo();
-            c.YeastId = YeastId;
-            c.WaterTier = WaterTier;
-            c.Counterfeit = Counterfeit;
-            for (int i = 0; i < Grades.Count; i++) c.Grades.Add(Grades[i]);
-            return c;
-        }
     }
 
     /// <summary>表格里的一行：某个档位能酿几瓶。</summary>
     internal sealed class BrewTierRow
     {
-        internal int Tier;            // 0..5
+        internal int Tier;             // 0..5
         internal bool Counterfeit;
-        internal int Count;
+        internal int Count;            // 当前分法分到的瓶数
+        internal bool Feasible;        // 材料够不够单独做一瓶
         internal int ScoreMin;
         internal int ScoreMax;
         internal int Days;
-        internal BrewCombo Sample;    // 第一瓶的搭配，用来显示配方 / 照着酿
-        internal string Reason;       // Count == 0 时说明缺什么
+        internal BrewCombo Sample;     // 这一档的典型搭配（0 瓶时也用来显示配方）
+        internal string Reason;        // 做不了的原因
 
         internal string Name { get { return Counterfeit ? WineGrade.CounterfeitName : WineGrade.NameOfTier(Tier); } }
 
@@ -179,7 +168,7 @@ namespace QoL
             get
             {
                 if (Counterfeit) return "走私";
-                if (Count <= 0) return "—";
+                if (!Feasible) return "—";
                 return ScoreMin == ScoreMax ? ScoreMin + " 分" : ScoreMin + "~" + ScoreMax + " 分";
             }
         }
@@ -188,20 +177,28 @@ namespace QoL
         {
             get
             {
-                if (Count <= 0 || Sample == null) return "—";
+                if (Sample == null) return "—";
                 string water = Sample.WaterTier >= 0 ? BrewScan.TierName(Sample.WaterTier) : "水";
                 return Sample.BerryText + " + " + water;
             }
         }
+
+        internal string DaysText
+        {
+            get { return Feasible ? Days + " 夜" : "—"; }
+        }
     }
 
     /// <summary>
-    /// 按现有材料，一口气分完能酿出的每种酒各几瓶。
+    /// 按现有材料排出「每种酒各能酿几瓶」。
     ///
-    /// 两种分法（材料共用，只能二选一）：
-    ///   高品质优先：先凑 6 分（普通+优质），再 5 分、4 分…… 发霉果不参与
-    ///   多瓶优先  ：一颗果一瓶，瓶数最多（酒档次会低一些）
-    /// 走私酒单独用「合成酵母 + 污染水」，两档都会顺手用掉剩下的脏水和合成酵母。
+    /// 关键：材料是共用的，所以「可酿」这一列是一次分完的结果（各档不能相加）。
+    /// 另外每一档还会单独探一次「材料够不够做一瓶」，用来给 0 瓶的行显示配方和可用按钮。
+    ///
+    /// 两种分法：
+    ///   高品质优先：先凑 6 分（普通+优质），再 5/4/3 分，发霉果不参与
+    ///   多瓶优先  ：一颗果一瓶，瓶数最多（发霉也算）
+    /// 走私酒单独用「合成酵母 + 污染水」，两种分法最后都会顺手把剩下的脏水用掉。
     /// </summary>
     internal static class BrewAllocator
     {
@@ -211,18 +208,17 @@ namespace QoL
 
         private struct Template
         {
-            internal int A;              // 果实 A（-1 = 不加）
-            internal int B;              // 果实 B（-1 = 不加）
+            internal int A;
+            internal int B;
             internal int[] WaterTiers;
-            internal bool Counterfeit;
         }
 
-        // 高品质优先：按分数从高到低试
+        /// <summary>高品质优先的尝试顺序（同时也是「单独做这一档」时的优先顺序）。</summary>
         private static readonly Template[] QualityOrder =
         {
             T(BerryGrade.Standard, BerryGrade.Small,    WaterBest),   // 6 分
-            T(BerryGrade.Small,    BerryGrade.Small,    WaterPlain),  // 6 分（没好水时）
-            T(BerryGrade.Small,    BerryGrade.Small,    WaterBest),   // 7 分（只剩优质果时）
+            T(BerryGrade.Small,    BerryGrade.Small,    WaterPlain),  // 6 分（只剩基础水）
+            T(BerryGrade.Small,    BerryGrade.Small,    WaterBest),   // 7 分（只剩优质果）
             T(BerryGrade.Standard, BerryGrade.Standard, WaterBest),   // 5 分
             T(BerryGrade.Small,    BerryGrade.Waste,    WaterBest),   // 5 分
             T(BerryGrade.Small,    -1,                  WaterBest),   // 4 分
@@ -230,9 +226,22 @@ namespace QoL
             T(BerryGrade.Waste,    BerryGrade.Waste,    WaterBest),   // 3 分
             T(BerryGrade.Standard, -1,                  WaterBest),   // 3 分
             T(BerryGrade.Small,    -1,                  WaterPlain),  // 3 分（只剩基础水）
-            T(BerryGrade.Standard, -1,                  WaterPlain),  // 2 分（把剩下的普通果也用掉）
-            T(BerryGrade.Waste,    -1,                  WaterPlain)   // 1 分（最后剩下干瘪果）
+            T(BerryGrade.Standard, -1,                  WaterPlain),  // 2 分
+            T(BerryGrade.Waste,    -1,                  WaterBest),   // 2 分
+            T(BerryGrade.Waste,    -1,                  WaterPlain)   // 1 分
         };
+
+        /// <summary>再加上发霉果的两条（只有「单独做这一档」时才会用到）。</summary>
+        private static readonly Template[] ProbeOrder = BuildProbeOrder();
+
+        private static Template[] BuildProbeOrder()
+        {
+            List<Template> list = new List<Template>(QualityOrder);
+            list.Add(T(BerryGrade.Mold, -1, WaterBest));    // 1 分
+            list.Add(T(BerryGrade.Mold, -1, WaterPlain));   // 0 分
+            list.Add(T(BerryGrade.Mold, BerryGrade.Mold, WaterPlain));
+            return list.ToArray();
+        }
 
         private static Template T(int a, int b, int[] waters)
         {
@@ -240,12 +249,14 @@ namespace QoL
             t.A = a;
             t.B = b;
             t.WaterTiers = waters;
-            t.Counterfeit = a < 0;
             return t;
         }
 
-        internal static List<BrewTierRow> Plan(BrewStock stock, bool qualityFirst, string preferredYeast,
-            int waterTierFilter, int yeastPower, out string note)
+        // ---------------------------------------------------------------
+        // 对外
+        // ---------------------------------------------------------------
+
+        internal static List<BrewTierRow> Plan(BrewStock stock, bool qualityFirst, int yeastPower, out string note)
         {
             note = string.Empty;
             List<BrewTierRow> rows = EmptyRows(yeastPower);
@@ -254,22 +265,42 @@ namespace QoL
             if (stock.EmptyBottles.Count <= 0)
             {
                 note = stock.WineBottles.Count > 0 ? "没有空酒瓶（现有的瓶都装着酒）" : "没有空酒瓶";
-                FillReasons(rows, stock, 0, waterTierFilter);
+                for (int i = 0; i < rows.Count; i++) rows[i].Reason = "没有空瓶";
                 return rows;
             }
 
-            Budget budget = new Budget(stock, waterTierFilter);
-            if (qualityFirst) FillByQuality(rows, budget, preferredYeast);
-            else FillByCount(rows, budget, preferredYeast);
+            // 1) 先按分法整体分一遍
+            Budget budget = new Budget(stock);
+            if (qualityFirst) FillByQuality(rows, budget);
+            else FillByCount(rows, budget);
 
             FillCounterfeit(rows, budget);
 
             int total = 0;
             for (int i = 0; i < rows.Count; i++) total += rows[i].Count;
+
+            // 2) 没分到的档位再单独探一次：够不够做一瓶、配方长什么样
             for (int i = 0; i < rows.Count; i++)
             {
-                if (rows[i].Count > 0) continue;
-                rows[i].Reason = ReasonFor(rows[i], stock, total, waterTierFilter);
+                BrewTierRow row = rows[i];
+                if (row.Count > 0) { row.Feasible = true; continue; }
+
+                BrewCombo sample;
+                int max = Probe(stock, row.Tier, row.Counterfeit, out sample);
+
+                row.Feasible = max > 0;
+                if (row.Feasible)
+                {
+                    row.Sample = sample;
+                    int score = row.Counterfeit ? 3 : BrewScore.Of(sample.Grades, true, sample.WaterTier);
+                    row.ScoreMin = score;
+                    row.ScoreMax = score;
+                    row.Reason = total > 0 ? "材料在别处" : null;
+                }
+                else
+                {
+                    row.Reason = ReasonFor(row, stock, total);
+                }
             }
 
             note = total > 0
@@ -297,6 +328,42 @@ namespace QoL
             return rows;
         }
 
+        /// <summary>单独测算：只用材料做这一档，能做几瓶；sample 给出典型搭配。</summary>
+        private static int Probe(BrewStock stock, int tier, bool counterfeit, out BrewCombo sample)
+        {
+            sample = null;
+            Budget b = new Budget(stock);
+
+            if (counterfeit)
+            {
+                int n = 0;
+                while (b.Bottles > 0)
+                {
+                    Candidate c = PickCounterfeit(b);
+                    if (c == null) break;
+                    if (sample == null) sample = c.Combo;
+                    Consume(b, c);
+                    n++;
+                }
+                return n;
+            }
+
+            int count = 0;
+            while (b.Bottles > 0)
+            {
+                Candidate c = PickForTier(b, tier);
+                if (c == null) break;
+                if (sample == null) sample = c.Combo;
+                Consume(b, c);
+                count++;
+            }
+            return count;
+        }
+
+        // ---------------------------------------------------------------
+        // 材料预算
+        // ---------------------------------------------------------------
+
         private sealed class Budget
         {
             internal int Bottles;
@@ -304,11 +371,10 @@ namespace QoL
             internal readonly List<BrewWater> Waters = new List<BrewWater>();
             internal readonly List<BrewYeast> Yeasts = new List<BrewYeast>();
 
-            internal Budget(BrewStock stock, int waterTierFilter)
+            internal Budget(BrewStock stock)
             {
                 Bottles = stock.EmptyBottles.Count;
 
-                // 高品质优先永远不用发霉果；多瓶优先才把发霉也算进来
                 for (int i = 0; i < stock.Berries.Count; i++)
                 {
                     BrewBerry b = stock.Berries[i];
@@ -318,8 +384,6 @@ namespace QoL
                 for (int i = 0; i < stock.Waters.Count; i++)
                 {
                     BrewWater w = stock.Waters[i];
-                    if (waterTierFilter >= 0 && w.Tier != waterTierFilter) continue;
-
                     BrewWater copy = new BrewWater();
                     copy.Item = w.Item;
                     copy.Name = w.Name;
@@ -331,107 +395,67 @@ namespace QoL
 
                 for (int i = 0; i < stock.Yeasts.Count; i++) Yeasts.Add(stock.Yeasts[i].Clone());
             }
+        }
 
-            internal void TakeYeast(BrewYeast y)
-            {
-                if (y != null && !y.Reusable && y.Remain > 0) y.Remain--;
-            }
+        private sealed class Candidate
+        {
+            internal BrewCombo Combo;
+            internal BrewWater Water;
+            internal BrewYeast Yeast;
         }
 
         // ---------------------------------------------------------------
-        // 高品质优先
+        // 两种分法
         // ---------------------------------------------------------------
 
-        private static void FillByQuality(List<BrewTierRow> rows, Budget budget, string preferredYeast)
+        private static void FillByQuality(List<BrewTierRow> rows, Budget budget)
         {
             while (budget.Bottles > 0)
             {
-                bool made = false;
-
-                for (int i = 0; i < QualityOrder.Length; i++)
+                Candidate picked = null;
+                for (int i = 0; i < QualityOrder.Length && picked == null; i++)
                 {
-                    Template t = QualityOrder[i];
-                    if (t.Counterfeit) continue;   // 走私留到最后统一处理
-
-                    BrewYeast yeast = PickYeast(budget.Yeasts, preferredYeast);
-                    if (yeast == null) return;
-
-                    BrewWater water = PickWater(budget, t.WaterTiers);
-                    if (water == null) continue;
-
-                    if (t.A >= 0)
-                    {
-                        if (budget.Berry[t.A] <= 0) continue;
-                        if (t.B >= 0 && t.B == t.A && budget.Berry[t.A] < 2) continue;
-                        if (t.B >= 0 && t.B != t.A && budget.Berry[t.B] <= 0) continue;
-                    }
-
-                    // 成交
-                    BrewCombo combo = new BrewCombo();
-                    combo.YeastId = yeast.Id;
-                    combo.WaterTier = water.Tier;
-                    if (t.A >= 0) combo.Grades.Add(t.A);
-                    if (t.B >= 0) combo.Grades.Add(t.B);
-
-                    int score = BrewScore.Of(combo.Grades, true, water.Tier);
-
-                    budget.Bottles--;
-                    if (t.A >= 0) budget.Berry[t.A]--;
-                    if (t.B >= 0) budget.Berry[t.B]--;
-                    budget.TakeYeast(yeast);
-                    water.RemainMl -= BrewScan.WaterPerBottle;
-
-                    Accumulate(rows, combo, score);
-                    made = true;
-                    break;
+                    if (QualityOrder[i].A < 0) continue;
+                    picked = TryPick(budget, QualityOrder[i]);
                 }
+                if (picked == null) return;
 
-                if (!made) return;
+                Consume(budget, picked);
+                Accumulate(rows, picked.Combo, BrewScore.Of(picked.Combo.Grades, true, picked.Water.Tier));
             }
         }
 
-        // ---------------------------------------------------------------
-        // 多瓶优先：一颗果一瓶
-        // ---------------------------------------------------------------
-
-        private static void FillByCount(List<BrewTierRow> rows, Budget budget, string preferredYeast)
+        private static void FillByCount(List<BrewTierRow> rows, Budget budget)
         {
             int[] order = { BerryGrade.Small, BerryGrade.Standard, BerryGrade.Waste, BerryGrade.Mold };
 
             while (budget.Bottles > 0)
             {
-                BrewYeast yeast = PickYeast(budget.Yeasts, preferredYeast);
-                if (yeast == null) return;
-
-                BrewWater water = PickWater(budget, WaterBest) ?? PickWater(budget, WaterPlain);
-                if (water == null) return;
-
                 int grade = -1;
                 for (int i = 0; i < order.Length; i++)
                 {
                     if (budget.Berry[order[i]] > 0) { grade = order[i]; break; }
                 }
+                if (grade < 0) return;
+
+                BrewWater water = PickWater(budget, WaterBest) ?? PickWater(budget, WaterPlain);
+                BrewYeast yeast = PickYeast(budget.Yeasts);
+                if (water == null || yeast == null) return;
 
                 BrewCombo combo = new BrewCombo();
                 combo.YeastId = yeast.Id;
                 combo.WaterTier = water.Tier;
-                if (grade < 0) return;      // 没果子了，剩下的交给走私分支
                 combo.Grades.Add(grade);
 
-                int score = BrewScore.Of(combo.Grades, true, water.Tier);
+                Candidate c = new Candidate();
+                c.Combo = combo;
+                c.Water = water;
+                c.Yeast = yeast;
 
-                budget.Bottles--;
-                budget.Berry[grade]--;
-                budget.TakeYeast(yeast);
-                water.RemainMl -= BrewScan.WaterPerBottle;
-
-                Accumulate(rows, combo, score);
+                Consume(budget, c);
+                Accumulate(rows, combo, BrewScore.Of(combo.Grades, true, water.Tier));
             }
         }
-
-        // ---------------------------------------------------------------
-        // 走私酒
-        // ---------------------------------------------------------------
 
         private static void FillCounterfeit(List<BrewTierRow> rows, Budget budget)
         {
@@ -439,22 +463,11 @@ namespace QoL
 
             while (budget.Bottles > 0)
             {
-                BrewYeast yeast = PickSynthetic(budget.Yeasts);
-                if (yeast == null) return;
+                Candidate c = PickCounterfeit(budget);
+                if (c == null) return;
 
-                BrewWater water = PickWater(budget, WaterDirty);
-                if (water == null) return;
-
-                BrewCombo combo = new BrewCombo();
-                combo.Counterfeit = true;
-                combo.YeastId = yeast.Id;
-                combo.WaterTier = water.Tier;
-
-                budget.Bottles--;
-                budget.TakeYeast(yeast);
-                water.RemainMl -= BrewScan.WaterPerBottle;
-
-                if (row.Count == 0) row.Sample = combo;
+                Consume(budget, c);
+                if (row.Count == 0) row.Sample = c.Combo;
                 row.Count++;
                 row.ScoreMin = 3;
                 row.ScoreMax = 3;
@@ -462,8 +475,91 @@ namespace QoL
         }
 
         // ---------------------------------------------------------------
-        // 记账
+        // 挑一瓶
         // ---------------------------------------------------------------
+
+        private static Candidate TryPick(Budget b, Template t)
+        {
+            if (!HasBerries(b, t)) return null;
+
+            BrewWater water = PickWater(b, t.WaterTiers);
+            if (water == null) return null;
+
+            BrewYeast yeast = PickYeast(b.Yeasts);
+            if (yeast == null) return null;
+
+            BrewCombo combo = new BrewCombo();
+            combo.YeastId = yeast.Id;
+            combo.WaterTier = water.Tier;
+            if (t.A >= 0) combo.Grades.Add(t.A);
+            if (t.B >= 0) combo.Grades.Add(t.B);
+
+            Candidate c = new Candidate();
+            c.Combo = combo;
+            c.Water = water;
+            c.Yeast = yeast;
+            return c;
+        }
+
+        /// <summary>只挑「成品刚好落在这一档」的搭配。</summary>
+        private static Candidate PickForTier(Budget b, int tier)
+        {
+            for (int i = 0; i < ProbeOrder.Length; i++)
+            {
+                Candidate c = TryPick(b, ProbeOrder[i]);
+                if (c == null) continue;
+
+                int score = BrewScore.Of(c.Combo.Grades, true, c.Water.Tier);
+                if (WineGrade.TierOf(score) != tier) continue;
+                return c;
+            }
+            return null;
+        }
+
+        private static Candidate PickCounterfeit(Budget b)
+        {
+            BrewYeast yeast = PickSynthetic(b.Yeasts);
+            if (yeast == null) return null;
+
+            BrewWater water = PickWater(b, WaterDirty);
+            if (water == null) return null;
+
+            BrewCombo combo = new BrewCombo();
+            combo.Counterfeit = true;
+            combo.YeastId = yeast.Id;
+            combo.WaterTier = water.Tier;
+
+            Candidate c = new Candidate();
+            c.Combo = combo;
+            c.Water = water;
+            c.Yeast = yeast;
+            return c;
+        }
+
+        private static bool HasBerries(Budget b, Template t)
+        {
+            if (t.A < 0) return true;
+            if (b.Berry[t.A] <= 0) return false;
+            if (t.B >= 0)
+            {
+                if (t.B == t.A) return b.Berry[t.A] >= 2;
+                return b.Berry[t.B] > 0;
+            }
+            return true;
+        }
+
+        private static void Consume(Budget b, Candidate c)
+        {
+            b.Bottles--;
+
+            int first = c.Combo.Grades.Count > 0 ? c.Combo.Grades[0] : -1;
+            int second = c.Combo.Grades.Count > 1 ? c.Combo.Grades[1] : -1;
+            if (first >= 0) b.Berry[first]--;
+            if (second >= 0) b.Berry[second]--;
+
+            if (c.Yeast != null && !c.Yeast.Reusable && c.Yeast.Remain > 0) c.Yeast.Remain--;
+            if (c.Water != null) c.Water.RemainMl -= BrewScan.WaterPerBottle;
+        }
 
         private static void Accumulate(List<BrewTierRow> rows, BrewCombo combo, int score)
         {
@@ -508,16 +604,8 @@ namespace QoL
             return null;
         }
 
-        private static BrewYeast PickYeast(List<BrewYeast> list, string preferred)
+        private static BrewYeast PickYeast(List<BrewYeast> list)
         {
-            if (!string.IsNullOrEmpty(preferred))
-            {
-                for (int i = 0; i < list.Count; i++)
-                {
-                    if (list[i].Id == preferred && list[i].Remain > 0 && !list[i].Synthetic) return list[i];
-                }
-            }
-
             string[] order = { "wine_yeast_infinite", "wine_superyeast", "wine_yeast" };
             for (int i = 0; i < order.Length; i++)
             {
@@ -550,27 +638,22 @@ namespace QoL
         // 「做不出来」的原因
         // ---------------------------------------------------------------
 
-        private static void FillReasons(List<BrewTierRow> rows, BrewStock stock, int total, int waterTierFilter)
+        private static string ReasonFor(BrewTierRow row, BrewStock stock, int total)
         {
-            for (int i = 0; i < rows.Count; i++) rows[i].Reason = ReasonFor(rows[i], stock, total, waterTierFilter);
-        }
+            if (stock.EmptyBottles.Count <= 0) return "没有空瓶";
 
-        private static string ReasonFor(BrewTierRow row, BrewStock stock, int total, int waterTierFilter)
-        {
             if (row.Counterfeit)
             {
                 if (!HasSyntheticYeast(stock)) return "缺合成酵母";
-                if (waterTierFilter >= 0 && waterTierFilter < 3) return "走私酒要用污染水";
                 if (!HasDirtyWater(stock)) return "缺污染水";
-                return total > 0 ? "材料优先分给了上面" : "材料不够";
+                return "材料不够";
             }
 
-            if (stock.EmptyBottles.Count <= 0) return "没有空瓶";
-            if (total > 0) return "材料优先分给了上面";
+            if (total > 0) return "材料不够这一档";
             if (stock.BerryTotal() == 0 && stock.BerryCount(BerryGrade.Mold) == 0) return "没有荧光莓";
             if (!HasCleanWater(stock)) return "没有干净水";
             if (stock.Yeasts.Count == 0) return "没有酵母";
-            return "凑不出这个档位";
+            return "凑不出这一档";
         }
 
         private static bool HasCleanWater(BrewStock stock)

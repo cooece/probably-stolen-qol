@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Text;
 using TMPro;
 using UnityEngine;
 
@@ -10,14 +11,14 @@ namespace QoL
     ///
     /// 走游戏自带的 CustomUI + Style.Machinery（2× 像素皮肤，和游戏里的机器面板同一套）。
     ///
-    /// 布局：
-    ///   1) 选择器：酵母 / 水质 / 空瓶
-    ///   2) 自选搭配：四种品相的果子各点一下加一颗 + 实时结算
-    ///   3) 分配方式：高品质优先（默认）或 多瓶优先
-    ///   4) 可酿表：六种酒 + 走私酒，各能酿几瓶、缺什么、每瓶配方与发酵夜数
-    ///   5) 一键酿造
+    /// 界面只有三块：
+    ///   1) 材料条：现在手里有什么（只读，悬停看明细）
+    ///   2) 分法开关：高品质优先 / 多瓶优先
+    ///   3) 可酿表：六种酒 + 走私酒，各能酿几瓶、每瓶配方、发酵几夜、缺什么
+    /// 底部：刷新 + 一键酿造。
     ///
-    /// 表里的瓶数是「一次分完」的结果 —— 材料是共用的，各档不能叠加。
+    /// 表里的「可酿」是一次分完的结果（材料共用，各档不能相加）；
+    /// 没分到但材料够的档位会显示配方，并且可以单独酿一瓶。
     /// </summary>
     internal static class BrewWindow
     {
@@ -26,41 +27,28 @@ namespace QoL
 
         private const float WinW = 880f;
 
-        /// <summary>窗口固定高度：外框 58 + 四行（选择/自选/预计/分配）+ 表头 + 七行 + 底行 + 分隔与间距。</summary>
-        private const float WinH = 590f;
+        /// <summary>外框 58 + 材料条 + 分法 + 表头 + 七行 + 底栏 + 间距。</summary>
+        private const float WinH = 512f;
 
         private const float Pad = 8f;
         private const float BtnH = 32f;
         private const float Gap = 6f;
 
-        // 表格列宽：772 + 5 个间距 30 = 802，塞进 848 的可用宽度
+        // 表列宽：706 + 5 个间距 30 = 736
         private const float ColName = 150f;
         private const float ColScore = 66f;
-        private const float ColRecipe = 240f;
-        private const float ColDays = 66f;
-        private const float ColCount = 160f;
-        private const float ColAct = 90f;
-
-        private const int MaxBerriesPerBottle = 10;
+        private const float ColRecipe = 200f;
+        private const float ColDays = 60f;
+        private const float ColCount = 130f;
+        private const float ColAct = 100f;
 
         private static readonly Color Body = MachineryStyle.BODY_TEXT;
         private static readonly Color Value = MachineryStyle.VALUE_TEXT;
         private static readonly Color DimColor = new Color(0.63f, 0.63f, 0.58f);
         private static readonly Color OkColor = MachineryStyle.PROGRESS_FILL;
-        private static readonly Color WarnColor = MachineryStyle.PROGRESS_FILL_WARNING;
         private static readonly Color BadColor = MachineryStyle.PROGRESS_FILL_DANGER;
         private static readonly Color GoldColor = new Color(0.925f, 0.78f, 0.35f);
 
-        // 按钮底色是米黄，文字只能压深
-        private static readonly Color[] GradeInk =
-        {
-            new Color(0.16f, 0.40f, 0.15f),   // 优质
-            new Color(0.20f, 0.20f, 0.18f),   // 普通
-            new Color(0.52f, 0.32f, 0.06f),   // 干瘪
-            new Color(0.55f, 0.14f, 0.12f)    // 发霉
-        };
-
-        private const string KeyYeast = "qol.brew.yeast";
         private const string KeyQuality = "qol.brew.quality";
         private const string KeyX = "qol.brew.x";
         private const string KeyY = "qol.brew.y";
@@ -69,14 +57,8 @@ namespace QoL
         private static bool _hasPos;
         private static Vector2 _pos;
 
-        private static string _preferred;
-        private static bool _preferredLoaded;
-
         private static bool _qualityFirst = true;
         private static bool _qualityLoaded;
-
-        private static int _waterTier = -1;          // -1 = 自动
-        private static readonly int[] _mix = new int[4];
 
         // ---------------------------------------------------------------
         // 对外
@@ -138,20 +120,6 @@ namespace QoL
             catch { }
         }
 
-        internal static string PreferredYeast
-        {
-            get
-            {
-                if (!_preferredLoaded)
-                {
-                    _preferredLoaded = true;
-                    try { _preferred = PlayerPrefs.GetString(KeyYeast, string.Empty); }
-                    catch { _preferred = string.Empty; }
-                }
-                return _preferred ?? string.Empty;
-            }
-        }
-
         private static bool QualityFirst
         {
             get
@@ -189,14 +157,9 @@ namespace QoL
             if (ui.IsOpen(WindowId)) ui.CloseWindow(WindowId);
 
             BrewStock stock = BrewScan.Scan();
-            NormalizeSelection(stock);
-
-            List<BrewYeast> yeastOptions = YeastOptions(stock);
-            int waterTier = EffectiveTier(stock);
 
             string note;
-            List<BrewTierRow> rows = BrewAllocator.Plan(stock, QualityFirst, PlannerYeast(stock),
-                _waterTier, YeastPower(stock), out note);
+            List<BrewTierRow> rows = BrewAllocator.Plan(stock, QualityFirst, YeastPower(stock), out note);
 
             int total = 0;
             for (int i = 0; i < rows.Count; i++) total += rows[i].Count;
@@ -208,17 +171,12 @@ namespace QoL
 
             b.BeginColumn(Pad, TextAnchor.UpperLeft);
 
-            BuildSelectors(b, stock, yeastOptions, waterTier);
-            BuildMix(b, stock);
-            BuildPreview(b, stock, waterTier);
-
+            BuildMaterials(b, stock);
             b.AddSeparator();
-
             BuildStrategy(b, total);
-            BuildTable(b, rows, stock);
+            BuildTable(b, rows);
 
             b.AddSeparator();
-
             BuildFooter(b, total, rows);
 
             b.End();
@@ -228,114 +186,127 @@ namespace QoL
         }
 
         // ---------------------------------------------------------------
-        // 1) 选择器：酵母 / 水质 / 空瓶
+        // 1) 材料条（只读）
         // ---------------------------------------------------------------
 
-        private static void BuildSelectors(CustomUIBuilder b, BrewStock stock, List<BrewYeast> options, int waterTier)
+        private static void BuildMaterials(CustomUIBuilder b, BrewStock stock)
         {
             b.BeginRow(Gap, TextAnchor.MiddleLeft);
 
-            const string yeastTip = "点 < > 换酵母。酵母种类不加分，只决定发酵要几夜：力量 4 一夜，力量 2 两夜。合成酵母是走私酒专用。";
-            const string waterTip = "点 < > 换水质，整张表都跟着算。纯水/优质水 +1 分，基础水 0，幽灵水 -1，铁锈水 -2，沟渠水 -3；「自动」＝按配方自己挑最合适的。";
+            Text(b, "材料", 44f, 14f, DimColor);
 
-            Text(b, "酵母", 52f, 14f, DimColor);
-            Button(b, "<", 38f, delegate { CycleYeast(-1); }, options.Count > 0, yeastTip);
-            Text(b, YeastLabel(stock), 168f, 14f, GoldColor).SetAlignment(HorizontalAlignmentOptions.Center);
-            Button(b, ">", 38f, delegate { CycleYeast(1); }, options.Count > 0, yeastTip);
-
-            Text(b, "水质", 52f, 14f, DimColor);
-            Button(b, "<", 38f, delegate { CycleWater(-1); }, true, waterTip);
-            Text(b, WaterLabel(stock, waterTier), 186f, 14f, Body).SetAlignment(HorizontalAlignmentOptions.Center);
-            Button(b, ">", 38f, delegate { CycleWater(1); }, true, waterTip);
-
-            Text(b, "空瓶", 52f, 14f, DimColor);
-            Text(b, "×" + stock.EmptyBottles.Count, 72f, 15f,
-                stock.EmptyBottles.Count > 0 ? Value : BadColor);
+            CustomUIElement bar = Text(b, MaterialText(stock), -1f, 14f, Body);
+            if (bar != null)
+            {
+                bar.SetFlexible(1f, 0f);
+                if (bar.text != null)
+                {
+                    bar.text.enableWordWrapping = false;
+                    bar.text.overflowMode = TextOverflowModes.Ellipsis;
+                }
+                bar.SetTooltip(MaterialTip(stock));
+            }
 
             b.End();
         }
 
-        // ---------------------------------------------------------------
-        // 2) 自选搭配
-        // ---------------------------------------------------------------
-
-        private static void BuildMix(CustomUIBuilder b, BrewStock stock)
+        private static string MaterialText(BrewStock stock)
         {
-            b.BeginRow(Gap, TextAnchor.MiddleLeft);
-            Text(b, "自选", 44f, 14f, DimColor);
+            StringBuilder sb = new StringBuilder();
 
-            for (int grade = 0; grade < 4; grade++)
+            sb.Append(C(stock.EmptyBottles.Count > 0 ? "#E6C25A" : "#CC4849", "空瓶 " + stock.EmptyBottles.Count));
+
+            sb.Append(D("   水 "));
+            bool anyWater = false;
+            for (int tier = 0; tier <= 5; tier++)
             {
-                int g = grade;
-                int avail = stock.BerryCount(g);
-                string label = BerryGrade.Label[g] + " ×" + _mix[g] + " / " + avail;
-
-                ButtonColored(b, label, 150f, delegate { CycleBerry(g, avail); }, avail > 0,
-                    _mix[g] > 0 ? GradeInk[g] : new Color(0.35f, 0.33f, 0.31f), BerryTip(g));
+                int bottles = stock.WaterBottles(tier);
+                if (bottles <= 0) continue;
+                if (anyWater) sb.Append(D(" · "));
+                sb.Append(C(tier <= 1 ? "#7FD3E0" : (tier >= 3 ? "#B98BE0" : "#C4C4B0"),
+                            BrewScan.TierName(tier) + " " + bottles + " 瓶"));
+                anyWater = true;
             }
+            if (!anyWater) sb.Append(C("#CC4849", "无"));
 
-            Button(b, "清空", 64f, delegate
+            sb.Append(D("   果 "));
+            string[] ink = { "#8FD46A", "#D9D6C2", "#DBA873", "#D97874" };
+            bool anyBerry = false;
+            for (int g = 0; g < 4; g++)
             {
-                for (int i = 0; i < 4; i++) _mix[i] = 0;
-                Brewing.Rescan();
-            }, HasMix());
-
-            b.End();
-        }
-
-        // ---------------------------------------------------------------
-        // 3) 实时结算
-        // ---------------------------------------------------------------
-
-        private static void BuildPreview(CustomUIBuilder b, BrewStock stock, int waterTier)
-        {
-            BrewCombo combo = ManualCombo(stock, waterTier);
-            string problem = Problem(stock, combo, waterTier);
-
-            b.BeginRow(Gap, TextAnchor.MiddleLeft);
-
-            string text;
-            Color color;
-            if (!string.IsNullOrEmpty(problem))
-            {
-                text = "预计：—　" + problem;
-                color = WarnColor;
+                int n = stock.BerryCount(g);
+                if (n <= 0) continue;
+                if (anyBerry) sb.Append(D(" "));
+                sb.Append(C(ink[g], BerryGrade.Label[g] + " " + n));
+                anyBerry = true;
             }
-            else if (combo.Counterfeit)
+            if (!anyBerry) sb.Append(C("#CC4849", "无"));
+
+            sb.Append(D("   酵母 "));
+            if (stock.Yeasts.Count == 0)
             {
-                text = "预计：走私酒「" + WineGrade.CounterfeitName + "」· 售价低、算违禁品 · 发酵 " +
-                       BrewScore.Days(YeastPower(stock)) + " 夜";
-                color = BadColor;
+                sb.Append(C("#CC4849", "无"));
             }
             else
             {
-                int score = BrewScore.Of(combo.Grades, stock.Yeasts.Count > 0, waterTier);
-                text = "预计：" + score + " 分 · " + WineGrade.NameOf(score) + " · 发酵 " +
-                       BrewScore.Days(YeastPower(stock)) + " 夜";
-                color = WineGrade.ColorOf(score);
-
-                if (score > WineGrade.TopTierScore) text += "（≥6 分同档，再加果子不加价）";
-            }
-
-            CustomUIElement label = Text(b, text, -1f, 15f, color);
-            if (label != null)
-            {
-                label.SetFlexible(1f, 0f);
-                if (label.text != null)
+                for (int i = 0; i < stock.Yeasts.Count; i++)
                 {
-                    label.text.enableWordWrapping = false;
-                    label.text.overflowMode = TextOverflowModes.Ellipsis;
+                    BrewYeast y = stock.Yeasts[i];
+                    if (i > 0) sb.Append(D(" · "));
+                    string amount = y.Reusable ? "无限" : "×" + y.Count;
+                    sb.Append(C(y.Synthetic ? "#CC4849" : "#B79BF0", y.Name + " " + amount));
                 }
             }
 
-            BrewCombo captured = combo;
-            Button(b, "按这套酿一瓶", 170f, delegate { Brewing.BrewSingle(captured); },
-                string.IsNullOrEmpty(problem));
-            b.End();
+            return sb.ToString();
+        }
+
+        private static string MaterialTip(BrewStock stock)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append("空酒瓶：").Append(stock.EmptyBottles.Count).Append(" 个");
+            if (stock.WineBottles.Count > 0)
+            {
+                sb.Append("（另有发酵中 ").Append(stock.Fermenting).Append(" · 已酿好 ").Append(stock.Finished).Append("）");
+            }
+
+            sb.Append("\n水（每瓶要 749ml）：");
+            if (stock.Waters.Count == 0) sb.Append("没有");
+            for (int tier = 0; tier <= 5; tier++)
+            {
+                int ml = stock.WaterMl(tier);
+                if (ml <= 0) continue;
+                sb.Append("\n  ").Append(BrewScan.TierName(tier)).Append(" ").Append(ml).Append("ml（")
+                  .Append(stock.WaterBottles(tier)).Append(" 瓶）");
+            }
+
+            sb.Append("\n荧光莓：");
+            bool any = false;
+            for (int g = 0; g < 4; g++)
+            {
+                int n = stock.BerryCount(g);
+                if (n <= 0) continue;
+                sb.Append(any ? " · " : "").Append(BerryGrade.Label[g]).Append(" ").Append(n);
+                any = true;
+            }
+            if (!any) sb.Append("没有");
+
+            sb.Append("\n酵母：");
+            if (stock.Yeasts.Count == 0) sb.Append("没有");
+            for (int i = 0; i < stock.Yeasts.Count; i++)
+            {
+                BrewYeast y = stock.Yeasts[i];
+                sb.Append("\n  ").Append(y.Name);
+                if (y.Reusable) sb.Append(" 无限使用");
+                else sb.Append(" ×").Append(y.Count);
+                sb.Append("（力量 ").Append(y.Power).Append("，").Append(BrewScore.Days(y.Power)).Append(" 夜）");
+            }
+
+            return sb.ToString();
         }
 
         // ---------------------------------------------------------------
-        // 4) 分配方式
+        // 2) 分法
         // ---------------------------------------------------------------
 
         private static void BuildStrategy(CustomUIBuilder b, int total)
@@ -374,10 +345,10 @@ namespace QoL
         }
 
         // ---------------------------------------------------------------
-        // 5) 可酿表
+        // 3) 可酿表
         // ---------------------------------------------------------------
 
-        private static void BuildTable(CustomUIBuilder b, List<BrewTierRow> rows, BrewStock stock)
+        private static void BuildTable(CustomUIBuilder b, List<BrewTierRow> rows)
         {
             b.BeginRow(Gap, TextAnchor.MiddleLeft);
             Text(b, "品质", ColName, 13f, DimColor);
@@ -389,61 +360,74 @@ namespace QoL
             b.End();
 
             b.BeginColumn(Pad, TextAnchor.UpperLeft);
-            for (int i = 0; i < rows.Count; i++) BuildTierRow(b, rows[i], stock);
+            for (int i = 0; i < rows.Count; i++) BuildTierRow(b, rows[i]);
             b.End();
         }
 
-        private static void BuildTierRow(CustomUIBuilder b, BrewTierRow row, BrewStock stock)
+        private static void BuildTierRow(CustomUIBuilder b, BrewTierRow row)
         {
-            bool ok = row.Count > 0;
-
             b.BeginRow(Gap, TextAnchor.MiddleLeft);
 
             Color nameColor = row.Counterfeit ? BadColor : WineGrade.ColorOfTier(row.Tier);
-            if (!ok) nameColor = new Color(nameColor.r * 0.55f, nameColor.g * 0.55f, nameColor.b * 0.55f);
+            if (!row.Feasible) nameColor = new Color(nameColor.r * 0.5f, nameColor.g * 0.5f, nameColor.b * 0.5f);
 
             CustomUIElement name = Text(b, row.Name, ColName, 15f, nameColor);
             if (name != null) name.SetTooltip(RowTip(row));
 
-            Text(b, row.ScoreText, ColScore, 15f, ok ? nameColor : DimColor);
-            Text(b, row.RecipeText, ColRecipe, 14f, ok ? Body : DimColor);
-            Text(b, ok ? row.Days + " 夜" : "—", ColDays, 14f, ok ? Body : DimColor);
+            Color dim = row.Feasible ? Body : DimColor;
+            Text(b, row.ScoreText, ColScore, 15f, row.Feasible ? nameColor : DimColor);
+            Text(b, row.RecipeText, ColRecipe, 14f, dim);
+            Text(b, row.DaysText, ColDays, 14f, dim);
 
-            if (ok) Text(b, "×" + row.Count, ColCount, 16f, GoldColor);
-            else Text(b, row.Reason, ColCount, 13f, new Color(0.60f, 0.47f, 0.45f));
+            if (row.Count > 0) Text(b, "×" + row.Count, ColCount, 16f, GoldColor);
+            else if (row.Feasible) Text(b, "0", ColCount, 15f, DimColor);
+            else Text(b, row.Reason ?? "做不了", ColCount, 13f, new Color(0.60f, 0.47f, 0.45f));
 
             BrewTierRow captured = row;
-            Button(b, ok ? "酿 " + row.Count : "酿", ColAct, delegate { Brewing.BrewTier(captured); }, ok);
+            if (row.Count > 0)
+            {
+                Button(b, "酿 " + row.Count, ColAct, delegate { Brewing.BrewTier(captured); }, true,
+                    "把这一档分到的 " + row.Count + " 瓶一次酿完");
+            }
+            else if (row.Feasible)
+            {
+                Button(b, "酿 1", ColAct, delegate { Brewing.BrewTier(captured); }, true,
+                    "材料够做一瓶，单独酿一瓶这个档位");
+            }
+            else
+            {
+                Button(b, "酿", ColAct, null, false, row.Reason);
+            }
 
             b.End();
         }
 
         private static string RowTip(BrewTierRow row)
         {
-            if (row.Count <= 0) return row.Name + "：" + (row.Reason ?? "现在做不出来");
+            if (!row.Feasible) return row.Name + "：" + (row.Reason ?? "现在做不出来");
 
-            string recipe = row.RecipeText;
-            string text = "每瓶要：" + recipe + " + 酵母×1\n" +
-                          "可酿：" + row.Count + " 瓶\n" +
-                          "发酵：" + row.Days + " 夜（酵母力量决定）\n" +
-                          "分数：" + row.ScoreText;
+            StringBuilder sb = new StringBuilder();
+            sb.Append("每瓶要：").Append(row.RecipeText).Append(" + 酵母×1");
+            sb.Append("\n分数：").Append(row.ScoreText).Append("　发酵：").Append(row.Days).Append(" 夜");
+            sb.Append("\n当前分到：").Append(row.Count).Append(" 瓶");
 
-            if (row.Counterfeit) text += "\n走私酒：算违禁品，治安检查会查，售价也低";
-            else if (row.Tier >= 4) text += "\n挂「奢侈」标签，顾客更容易收";
-            else if (row.Tier == 0) text += "\n不能喝、也卖不掉，只能倒掉";
+            if (row.Counterfeit) sb.Append("\n走私酒：算违禁品，治安检查会查，售价也低");
+            else if (row.Tier >= 4) sb.Append("\n挂「奢侈」标签，顾客更容易收");
+            else if (row.Tier == 0) sb.Append("\n不能喝也卖不掉，只能倒掉");
 
-            return text;
+            return sb.ToString();
         }
 
         // ---------------------------------------------------------------
-        // 6) 底部
+        // 4) 底部
         // ---------------------------------------------------------------
 
         private static void BuildFooter(CustomUIBuilder b, int total, List<BrewTierRow> rows)
         {
             b.BeginRow(Gap, TextAnchor.MiddleLeft);
 
-            CustomUIElement hint = Text(b, HintText(), -1f, 13f, DimColor);
+            CustomUIElement hint = Text(b,
+                "「可酿」是按当前分法分到的；灰掉的档位材料够时也能单独酿 1 瓶", -1f, 13f, DimColor);
             if (hint != null)
             {
                 hint.SetFlexible(1f, 0f);
@@ -454,86 +438,22 @@ namespace QoL
                 }
             }
 
-            Button(b, "刷新", 90f, Brewing.Rescan, true, "材料有变动（从箱子拿果子、倒水、做瓶）后点一下重新算");
+            Button(b, "刷新", 90f, Brewing.Rescan, true, "材料有变动（拿果子、倒水、做瓶）后点一下重新算");
 
             List<BrewTierRow> captured = rows;
             Button(b, total > 0 ? "一键酿造（" + total + " 瓶）" : "一键酿造", 210f,
-                delegate { Brewing.BrewEverything(captured); }, total > 0);
+                delegate { Brewing.BrewEverything(captured); }, total > 0,
+                "按表格从上到下，把每一档分到的瓶数全酿了");
 
             b.End();
         }
 
-        private static string HintText()
-        {
-            string key = Brewing.HotkeyName;
-            if (string.IsNullOrEmpty(key)) return "热键已关，可在模组设置里打开";
-            return "按 " + key + " 开关本面板 · 表里的瓶数是一次分完的结果，各档不能叠加";
-        }
-
         // ---------------------------------------------------------------
-        // 选择状态
+        // 小工具
         // ---------------------------------------------------------------
-
-        private static List<BrewYeast> YeastOptions(BrewStock stock)
-        {
-            List<BrewYeast> normal = new List<BrewYeast>();
-            List<BrewYeast> illegal = new List<BrewYeast>();
-
-            for (int i = 0; i < stock.Yeasts.Count; i++)
-            {
-                BrewYeast y = stock.Yeasts[i];
-                if (y.Items.Count == 0) continue;
-                if (y.Synthetic) illegal.Add(y);
-                else normal.Add(y);
-            }
-
-            normal.AddRange(illegal);
-            return normal;
-        }
-
-        private static void NormalizeSelection(BrewStock stock)
-        {
-            if (!string.IsNullOrEmpty(_preferred))
-            {
-                BrewYeast y = stock.Yeast(_preferred);
-                if (y == null || y.Items.Count == 0) _preferred = string.Empty;
-            }
-
-            if (_waterTier >= 0 && stock.WaterBottles(_waterTier) <= 0) _waterTier = -1;
-
-            for (int g = 0; g < 4; g++)
-            {
-                int avail = stock.BerryCount(g);
-                if (_mix[g] > avail) _mix[g] = avail;
-                if (_mix[g] < 0) _mix[g] = 0;
-            }
-        }
-
-        /// <summary>规划用酵母：选了合成酵母时不给规划，让表继续按普通酵母算。</summary>
-        private static string PlannerYeast(BrewStock stock)
-        {
-            BrewYeast y = stock.Yeast(_preferred);
-            if (y != null && y.Synthetic) return string.Empty;
-            return PreferredYeast;
-        }
-
-        private static int EffectiveTier(BrewStock stock)
-        {
-            if (_waterTier >= 0 && stock.WaterBottles(_waterTier) > 0) return _waterTier;
-            return Brewing.BestWaterTier(stock);
-        }
-
-        private static bool IsSyntheticSelected(BrewStock stock)
-        {
-            BrewYeast y = stock.Yeast(_preferred);
-            return y != null && y.Synthetic;
-        }
 
         private static int YeastPower(BrewStock stock)
         {
-            BrewYeast y = stock.Yeast(_preferred);
-            if (y != null) return y.Power;
-
             string[] order = { "wine_yeast_infinite", "wine_superyeast", "wine_yeast" };
             for (int i = 0; i < order.Length; i++)
             {
@@ -548,187 +468,15 @@ namespace QoL
             return 2;
         }
 
-        private static BrewCombo ManualCombo(BrewStock stock, int waterTier)
+        private static string C(string color, string text)
         {
-            BrewCombo combo = new BrewCombo();
-            combo.Counterfeit = IsSyntheticSelected(stock);
-            combo.YeastId = _preferred;
-            combo.WaterTier = waterTier;
-
-            if (!combo.Counterfeit)
-            {
-                for (int g = 0; g < 4; g++)
-                {
-                    for (int n = 0; n < _mix[g]; n++) combo.Grades.Add(g);
-                }
-            }
-            return combo;
+            return "<color=" + color + ">" + text + "</color>";
         }
 
-        private static string Problem(BrewStock stock, BrewCombo combo, int waterTier)
+        private static string D(string text)
         {
-            if (stock.EmptyBottles.Count <= 0) return "没有空酒瓶";
-
-            if (combo.Counterfeit)
-            {
-                if (waterTier >= 0 && waterTier < 3) return "走私酒要用污染水（幽灵 / 铁锈 / 沟渠）";
-                if (waterTier < 0) return "没有够一瓶的水";
-                return string.Empty;
-            }
-
-            if (combo.Grades.Count == 0) return "先在下面点几种果子";
-            if (combo.Grades.Count > MaxBerriesPerBottle) return "果子最多放 " + MaxBerriesPerBottle + " 颗";
-            if (waterTier < 0) return "没有够一瓶（≥749ml）的水";
-            if (string.IsNullOrEmpty(_preferred) && stock.Yeasts.Count == 0) return "没有酵母";
-
-            return string.Empty;
+            return C("#8A8A80", text);
         }
-
-        private static bool HasMix()
-        {
-            for (int i = 0; i < 4; i++) if (_mix[i] > 0) return true;
-            return false;
-        }
-
-        private static int MixTotal()
-        {
-            int n = 0;
-            for (int i = 0; i < 4; i++) n += _mix[i];
-            return n;
-        }
-
-        private static string BerryTip(int grade)
-        {
-            switch (grade)
-            {
-                case BerryGrade.Small:
-                    return "优质果（小果）：每颗 +2 分。点一下放一颗，到库存上限再点归零。";
-                case BerryGrade.Standard:
-                    return "普通果：每颗 +1 分。放两颗以上还会额外 +1。";
-                case BerryGrade.Waste:
-                    return "干瘪果（未熟/过熟）：0 分，只用来凑「双果 +1」。";
-                default:
-                    return "发霉果：每颗 -1 分，高品质模式不会用它。";
-            }
-        }
-
-        // ---------------------------------------------------------------
-        // 点击行为
-        // ---------------------------------------------------------------
-
-        private static void CycleBerry(int grade, int avail)
-        {
-            if (avail <= 0) return;
-
-            if (_mix[grade] >= avail) { _mix[grade] = 0; Brewing.Rescan(); return; }
-            if (MixTotal() >= MaxBerriesPerBottle) return;
-
-            _mix[grade]++;
-            Brewing.Rescan();
-        }
-
-        private static void CycleYeast(int dir)
-        {
-            try
-            {
-                BrewStock stock = BrewScan.Scan();
-                List<BrewYeast> options = YeastOptions(stock);
-
-                int count = options.Count + 1;
-                int index = 0;
-                for (int i = 0; i < options.Count; i++)
-                {
-                    if (string.Equals(options[i].Id, _preferred, StringComparison.Ordinal)) { index = i + 1; break; }
-                }
-
-                index = ((index + dir) % count + count) % count;
-
-                _preferred = index == 0 ? string.Empty : options[index - 1].Id;
-                _preferredLoaded = true;
-                try
-                {
-                    PlayerPrefs.SetString(KeyYeast, _preferred);
-                    PlayerPrefs.Save();
-                }
-                catch { }
-
-                Brewing.Rescan();
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[酿酒] 切换酵母失败：" + e.GetType().Name);
-            }
-        }
-
-        private static void CycleWater(int dir)
-        {
-            try
-            {
-                BrewStock stock = BrewScan.Scan();
-
-                List<int> options = new List<int>();
-                options.Add(-1);
-                for (int t = 0; t <= 5; t++)
-                {
-                    if (stock.WaterBottles(t) > 0) options.Add(t);
-                }
-
-                int index = options.IndexOf(_waterTier);
-                if (index < 0) index = 0;
-
-                index = ((index + dir) % options.Count + options.Count) % options.Count;
-                _waterTier = options[index];
-
-                Brewing.Rescan();
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[酿酒] 切换水质失败：" + e.GetType().Name);
-            }
-        }
-
-        private static void OnQualityChanged(bool on)
-        {
-            _qualityFirst = on;
-            _qualityLoaded = true;
-            try
-            {
-                PlayerPrefs.SetInt(KeyQuality, on ? 1 : 0);
-                PlayerPrefs.Save();
-            }
-            catch { }
-
-            Brewing.Rescan();
-        }
-
-        // ---------------------------------------------------------------
-        // 文案
-        // ---------------------------------------------------------------
-
-        private static string YeastLabel(BrewStock stock)
-        {
-            BrewYeast y = stock.Yeast(_preferred);
-            if (y == null) return "《自动》";
-
-            string amount = y.Reusable ? "无限" : "×" + y.Count;
-            return y.Name + " " + amount;
-        }
-
-        private static string WaterLabel(BrewStock stock, int tier)
-        {
-            if (tier < 0) return "《无可用的水》";
-
-            int ml = stock.WaterMl(tier);
-            int bottles = stock.WaterBottles(tier);
-            string name = BrewScan.TierName(tier);
-            if (_waterTier < 0) name = "自动·" + name;
-
-            return name + " " + ml + "ml（" + bottles + " 瓶）";
-        }
-
-        // ---------------------------------------------------------------
-        // 控件小工具
-        // ---------------------------------------------------------------
 
         private static CustomUIElement Text(CustomUIBuilder b, string text, float width, float size, Color color)
         {
@@ -760,12 +508,6 @@ namespace QoL
 
         private static void Button(CustomUIBuilder b, string text, float width, Action onClick, bool enabled, string tooltip = null)
         {
-            ButtonColored(b, text, width, onClick, enabled, null, tooltip);
-        }
-
-        private static void ButtonColored(CustomUIBuilder b, string text, float width, Action onClick, bool enabled,
-            Color? textColor, string tooltip = null)
-        {
             try
             {
                 b.AddButton(text, onClick, null);
@@ -779,7 +521,6 @@ namespace QoL
                     el.text.verticalAlignment = VerticalAlignmentOptions.Middle;
                     el.text.enableWordWrapping = false;
                     el.text.overflowMode = TextOverflowModes.Ellipsis;
-                    if (textColor.HasValue) el.text.color = textColor.Value;
                 }
                 if (!enabled) el.SetInteractable(false);
                 if (!string.IsNullOrEmpty(tooltip))
@@ -818,6 +559,20 @@ namespace QoL
             if (el == null || el.text == null) return el;
             el.text.horizontalAlignment = align;
             return el;
+        }
+
+        private static void OnQualityChanged(bool on)
+        {
+            _qualityFirst = on;
+            _qualityLoaded = true;
+            try
+            {
+                PlayerPrefs.SetInt(KeyQuality, on ? 1 : 0);
+                PlayerPrefs.Save();
+            }
+            catch { }
+
+            Brewing.Rescan();
         }
 
         // ---------------------------------------------------------------
