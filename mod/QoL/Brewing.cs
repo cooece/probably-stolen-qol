@@ -178,59 +178,63 @@ namespace QoL
             MarkDirty(0.25f);
         }
 
-        /// <summary>
-        /// 一键酿造。
-        /// autoMode=true：按推荐方案逐瓶酿（发霉果不参与、只用干净水）。
-        /// autoMode=false：反复酿玩家上面选的那套，材料用完为止。
-        /// </summary>
-        internal static void BrewAll(bool autoMode, BrewCombo manual, int waterTier)
+        /// <summary>酿某一档的全部（表格里那一行）。</summary>
+        internal static void BrewTier(BrewTierRow row)
         {
+            if (row == null || row.Sample == null || row.Count <= 0)
+            {
+                Notify("这一档现在酿不了");
+                return;
+            }
+
             int done = 0;
             string why = null;
-
-            for (int i = 0; i < MaxPerClick; i++)
+            for (int i = 0; i < row.Count; i++)
             {
-                BrewStock stock = BrewScan.Scan();
-                BrewCombo combo;
-
-                if (autoMode)
-                {
-                    string note;
-                    List<BrewPlan> plans = BrewPlanner.Recommend(stock, BrewWindow.PreferredYeast, waterTier, out note);
-                    if (plans.Count == 0)
-                    {
-                        why = note;
-                        break;
-                    }
-                    combo = plans[0].ToCombo();
-                }
-                else
-                {
-                    if (manual == null || (!manual.Counterfeit && manual.Grades.Count == 0))
-                    {
-                        why = "自选搭配里还没放果子";
-                        break;
-                    }
-                    combo = manual;
-                }
-
                 string one;
-                if (!BrewOne(combo, stock, out one))
-                {
-                    why = one;
-                    break;
-                }
+                if (!BrewOne(row.Sample, BrewScan.Scan(), out one)) { why = one; break; }
                 done++;
             }
 
             if (done == 0) Notify("没酿成：" + why);
-            else if (done >= MaxPerClick) Notify("已启动 " + done + " 瓶（单次上限）");
-            else Notify("已启动 " + done + " 瓶发酵");
+            else if (done < row.Count) Notify("已酿 " + done + " 瓶，" + why);
+            else Notify("已下料 " + done + " 瓶「" + row.Name + "」");
 
-            QLog.Info("[酿酒] 一键酿造（" + (autoMode ? "自动" : "自选") + "）：" + done + " 瓶" +
-                      (why != null ? "，停下原因：" + why : string.Empty));
+            QLog.Info("[酿酒] 按档酿造：" + row.Name + " 目标 " + row.Count + " 瓶，实际 " + done + " 瓶" +
+                      (why != null ? "（" + why + "）" : string.Empty));
 
             MarkDirty(0.3f);
+        }
+
+        /// <summary>一键酿造：按表格从上到下，把每一档的可酿瓶数全酿了。</summary>
+        internal static void BrewEverything(List<BrewTierRow> rows)
+        {
+            if (rows == null) return;
+
+            int done = 0;
+            string why = null;
+
+            for (int r = 0; r < rows.Count && done < MaxPerClick; r++)
+            {
+                BrewTierRow row = rows[r];
+                if (row == null || row.Count <= 0 || row.Sample == null) continue;
+
+                for (int i = 0; i < row.Count && done < MaxPerClick; i++)
+                {
+                    string one;
+                    if (!BrewOne(row.Sample, BrewScan.Scan(), out one)) { why = one; break; }
+                    done++;
+                }
+                if (why != null) break;
+            }
+
+            if (done == 0) Notify("没酿成：" + why);
+            else if (done >= MaxPerClick) Notify("已下料 " + done + " 瓶（单次上限）");
+            else Notify("一键酿造：已下料 " + done + " 瓶");
+
+            QLog.Info("[酿酒] 一键酿造：下料 " + done + " 瓶" + (why != null ? "，停下原因：" + why : string.Empty));
+
+            MarkDirty(0.35f);
         }
 
         /// <summary>重新扫描：只重画界面。</summary>
