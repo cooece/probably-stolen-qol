@@ -20,8 +20,8 @@ namespace QoL
 
         private const float WinW = 880f;
 
-        /// <summary>除滚动区以外的固定高度：外框 58 + 卡片 78 + 表头 32 + 列标题 26 + 两条分隔 + 两行操作 + 间距。</summary>
-        private const float FixedH = 318f;
+        /// <summary>除配方表以外的固定高度：外框 58 + 卡片 78 + 表头 32 + 列标题 26 + 两条分隔 + 两行操作 + 间距。</summary>
+        private const float FixedH = 324f;
 
         private const float Pad = 8f;          // 行间距
         private const float CardH = 78f;
@@ -170,9 +170,11 @@ namespace QoL
             int first = _page * RowsPerPage;
             int visible = Math.Min(RowsPerPage, Math.Max(0, groups.Count - first));
 
-            // 高度跟着行数走：只有两三瓶时不留一大片空白，也不至于缩成一条
-            float scrollH = groups.Count == 0 ? 96f : Math.Max(3, visible) * RowPitch - Pad;
-            float winH = FixedH + scrollH;
+            // 高度跟着内容走：两瓶时不空一大片，八瓶时也不会挤出框
+            float listH = groups.Count == 0
+                ? (1 + stock.Notes.Count) * 27f + 4f
+                : Math.Max(1, visible) * RowPitch - Pad;
+            float winH = FixedH + listH;
 
             CustomUIBuilder b = ui.CreateWindow(WindowId, Title, "overlay", null, CustomUIManager.Style.Machinery)
                 .SetSize(WinW, winH)
@@ -214,10 +216,12 @@ namespace QoL
             b.End();
 
             // ---- 配方表 ----
-            b.BeginScroll(scrollH);
+            // 机械风皮肤没有 ScrollView 预制体（CustomUIMachineryStyle 不生成），BeginScroll 会
+            // 静默退化成普通列；所以这里直接用列 + 翻页，窗口高度按行数算，保证永远不溢出边框。
+            b.BeginColumn(Pad, TextAnchor.UpperLeft);
             if (groups.Count == 0)
             {
-                Text(b, string.IsNullOrEmpty(note) ? "没有可酿的配方。" : note, 780f, 15f, BadColor);
+                Note(b, string.IsNullOrEmpty(note) ? "没有可酿的配方。" : note, 780f, 15f, BadColor);
                 AddStockNotes(b, stock);
             }
             else
@@ -352,7 +356,19 @@ namespace QoL
 
         private static void AddStockNotes(CustomUIBuilder b, BrewStock stock)
         {
-            for (int i = 0; i < stock.Notes.Count; i++) Text(b, stock.Notes[i], 780f, 13f, WarnColor);
+            for (int i = 0; i < stock.Notes.Count; i++) Note(b, stock.Notes[i], 780f, 13f, WarnColor);
+        }
+
+        /// <summary>可以换行的说明文字（提示不要被省略号吃掉）。</summary>
+        private static CustomUIElement Note(CustomUIBuilder b, string text, float width, float size, Color color)
+        {
+            CustomUIElement el = Text(b, text, width, size, color);
+            if (el != null && el.text != null)
+            {
+                el.text.enableWordWrapping = true;
+                el.text.overflowMode = TextOverflowModes.Overflow;
+            }
+            return el;
         }
 
         // ---------------------------------------------------------------
