@@ -27,20 +27,21 @@ namespace QoL
 
         private const float WinW = 880f;
 
-        /// <summary>外框 58 + 材料条 + 分法 + 表头 + 七行 + 底栏 + 间距。</summary>
-        private const float WinH = 512f;
+        /// <summary>外框 58 + 材料两行 + 分法 + 表头 + 七行 + 底栏 + 间距。</summary>
+        private const float WinH = 532f;
 
         private const float Pad = 8f;
         private const float BtnH = 32f;
         private const float Gap = 6f;
 
-        // 表列宽：144+66+190+60+96+148 = 704 + 5 个间距 30 = 734
-        private const float ColName = 144f;
-        private const float ColScore = 66f;
+        // 表列宽：138+60+190+56+66+148+110 = 768 + 6 个间距 36 = 804
+        private const float ColName = 138f;
+        private const float ColScore = 60f;
         private const float ColRecipe = 190f;
-        private const float ColDays = 60f;
-        private const float ColCount = 96f;
+        private const float ColDays = 56f;
+        private const float ColCount = 66f;
         private const float ColAct = 148f;
+        private const float ColFill = 110f;
 
         // 操作列里的 < N > 三个控件（按钮最小宽 32，见机械风 CreateButton）
         private const float ArrowW = 32f;
@@ -78,11 +79,11 @@ namespace QoL
             internal CustomUIElement Less;
             internal CustomUIElement Brew;
             internal CustomUIElement More;
+            internal CustomUIElement Fill;
         }
 
         private static readonly List<RowUi> _rows = new List<RowUi>();
         private static CustomUIElement _footerHint;
-        private static CustomUIElement _brewAll;
         private static int _materialTotal;
 
         // ---------------------------------------------------------------
@@ -190,7 +191,6 @@ namespace QoL
             // 旧控件随窗口一起销毁，引用必须清掉，否则 < > 会改到已销毁的对象
             _rows.Clear();
             _footerHint = null;
-            _brewAll = null;
 
             BrewStock stock = BrewScan.Scan();
 
@@ -220,7 +220,7 @@ namespace QoL
             BuildTable(b, rows);
 
             b.AddSeparator();
-            BuildFooter(b, total, wantTotal, rows);
+            BuildFooter(b, total, wantTotal);
 
             b.End();
 
@@ -234,11 +234,18 @@ namespace QoL
 
         private static void BuildMaterials(CustomUIBuilder b, BrewStock stock)
         {
+            // 材料种类多的时候一行放不下（酵母名还挺长），拆成两行：瓶+水+果 / 酵母
+            AddMaterialRow(b, "材料", MaterialTextBottles(stock), stock);
+            AddMaterialRow(b, "", MaterialTextYeast(stock), stock);
+        }
+
+        private static void AddMaterialRow(CustomUIBuilder b, string caption, string text, BrewStock stock)
+        {
             b.BeginRow(Gap, TextAnchor.MiddleLeft);
 
-            Text(b, "材料", 44f, 14f, DimColor);
+            Text(b, caption, 44f, 14f, DimColor);
 
-            CustomUIElement bar = Text(b, MaterialText(stock), -1f, 14f, Body);
+            CustomUIElement bar = Text(b, text, -1f, 14f, Body);
             if (bar != null)
             {
                 bar.SetFlexible(1f, 0f);
@@ -253,7 +260,7 @@ namespace QoL
             b.End();
         }
 
-        private static string MaterialText(BrewStock stock)
+        private static string MaterialTextBottles(BrewStock stock)
         {
             StringBuilder sb = new StringBuilder();
 
@@ -285,20 +292,26 @@ namespace QoL
             }
             if (!anyBerry) sb.Append(C("#CC4849", "无"));
 
-            sb.Append(D("   酵母 "));
+            return sb.ToString();
+        }
+
+        private static string MaterialTextYeast(BrewStock stock)
+        {
+            StringBuilder sb = new StringBuilder();
+            sb.Append(D("酵母 "));
+
             if (stock.Yeasts.Count == 0)
             {
                 sb.Append(C("#CC4849", "无"));
+                return sb.ToString();
             }
-            else
+
+            for (int i = 0; i < stock.Yeasts.Count; i++)
             {
-                for (int i = 0; i < stock.Yeasts.Count; i++)
-                {
-                    BrewYeast y = stock.Yeasts[i];
-                    if (i > 0) sb.Append(D(" · "));
-                    string amount = y.Reusable ? "无限" : "×" + y.Count;
-                    sb.Append(C(y.Synthetic ? "#CC4849" : "#B79BF0", y.Name + " " + amount));
-                }
+                BrewYeast y = stock.Yeasts[i];
+                if (i > 0) sb.Append(D(" · "));
+                string amount = y.Reusable ? "无限" : "×" + y.Count;
+                sb.Append(C(y.Synthetic ? "#CC4849" : "#B79BF0", y.Name + " " + amount));
             }
 
             return sb.ToString();
@@ -399,10 +412,12 @@ namespace QoL
             Text(b, "每瓶配方", ColRecipe, 13f, DimColor);
             Text(b, "发酵", ColDays, 13f, DimColor);
             Tip(Text(b, "最多", ColCount, 13f, DimColor),
-                "这一档材料全给它最多能做几瓶（也就是右边 < > 的上限）。" +
+                "这一档材料全给它最多能做几瓶（也就是中间 < > 的上限）。" +
                 "各档共用同一批材料，所以只作参考、不能相加。");
             Tip(Text(b, "自选瓶数", ColAct, 13f, DimColor),
                 "用 < > 调这一档要酿几瓶，点中间的「酿 N」直接开酿。");
+            Tip(Text(b, "全酿", ColFill, 13f, DimColor),
+                "把这一档按上限一次酿完。会一瓶一瓶地做，中途不会卡画面。");
             b.End();
 
             b.BeginColumn(Pad, TextAnchor.UpperLeft);
@@ -450,6 +465,12 @@ namespace QoL
                 delegate { Brewing.BrewTier(captured); }, canBrew, BrewTip(row), 15f, true);
             ui.More = Button(b, ">", ArrowW, delegate { Adjust(captured, 1); }, row.Want < row.Max,
                 row.Want >= row.Max ? "材料最多做到 " + row.Max + " 瓶" : "多酿一瓶", 16f, true);
+
+            ui.Fill = Button(b, row.Max > 0 ? "全酿 " + row.Max : "全酿", ColFill,
+                delegate { Brewing.BrewTierAll(captured); }, row.Max > 0,
+                row.Max > 0
+                    ? "把这一档按上限一次酿完（" + row.Max + " 瓶）"
+                    : (row.Reason ?? "这一档现在做不出来"), 14f);
 
             b.End();
         }
@@ -538,12 +559,6 @@ namespace QoL
                 _footerHint.SetText(FooterText(wantTotal, over));
                 if (_footerHint.text != null) _footerHint.text.color = over ? BadColor : DimColor;
             }
-
-            if (_brewAll != null)
-            {
-                _brewAll.SetText(wantTotal > 0 ? "一键酿造（" + wantTotal + " 瓶）" : "一键酿造");
-                _brewAll.SetInteractable(wantTotal > 0);
-            }
         }
 
         private static string FooterText(int wantTotal, bool over)
@@ -574,7 +589,7 @@ namespace QoL
         // 4) 底部
         // ---------------------------------------------------------------
 
-        private static void BuildFooter(CustomUIBuilder b, int total, int wantTotal, List<BrewTierRow> rows)
+        private static void BuildFooter(CustomUIBuilder b, int total, int wantTotal)
         {
             b.BeginRow(Gap, TextAnchor.MiddleLeft);
 
@@ -593,11 +608,6 @@ namespace QoL
             _footerHint = hint;
 
             Button(b, "刷新", 90f, Brewing.Rescan, true, "材料有变动（拿果子、倒水、做瓶）后点一下重新算");
-
-            List<BrewTierRow> captured = rows;
-            _brewAll = Button(b, wantTotal > 0 ? "一键酿造（" + wantTotal + " 瓶）" : "一键酿造", 210f,
-                delegate { Brewing.BrewEverything(captured); }, wantTotal > 0,
-                "按表格从上到下，把每一档选好的瓶数全酿了");
 
             b.End();
         }

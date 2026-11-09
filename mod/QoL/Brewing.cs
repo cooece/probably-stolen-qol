@@ -17,12 +17,20 @@ namespace QoL
     {
         internal const string Off = "关闭";
 
-        /// <summary>一次「一键酿造」最多开几瓶，防止手滑把库存全烧了。</summary>
-        internal const int MaxPerClick = 20;
+        /// <summary>「酿 N / 全酿 N」时每瓶之间的间隔：一瓶要重扫一次全店库存，连着做 30 瓶会卡。</summary>
+        private const float BatchInterval = 0.02f;
 
         private static bool _applied;
         private static bool _dirty;
         private static float _nextBuild;
+
+        // 「全酿 N」的分帧队列
+        private static BrewTierRow _batchRow;
+        private static string _batchName;
+        private static int _batchLeft;
+        private static int _batchDone;
+        private static float _batchNext;
+        private static bool _batchAnnounce;
 
         private static string _keyRaw;
         private static KeyCode _key;
@@ -46,6 +54,7 @@ namespace QoL
             _dirty = false;
             _keyReady = false;
             _keyRaw = null;
+            ResetBatch();
 
             try { BrewWindow.Close(); }
             catch (Exception e) { QLog.Warn("[酿酒] 关窗失败：" + e.Message); }
@@ -58,6 +67,9 @@ namespace QoL
         internal static void Tick(float dt)
         {
             if (!_applied) return;
+
+            // 「全酿 N」排队中：每帧酿一瓶，别一口气做三十瓶把画面卡住
+            StepBatch();
 
             // 界面重建推迟到下一帧：在按钮自己的回调里销毁它所在的窗口容易出事
             if (_dirty && Time.unscaledTime >= _nextBuild)
@@ -163,21 +175,6 @@ namespace QoL
         // 对外操作
         // ---------------------------------------------------------------
 
-        /// <summary>按指定搭配酿一瓶。</summary>
-        internal static void BrewSingle(BrewCombo combo)
-        {
-            if (combo == null) return;
-
-            string why;
-            bool ok = BrewOne(combo, BrewScan.Scan(), out why);
-
-            if (ok) Brewing.Notify("已下料：" + Describe(combo));
-            else Brewing.Notify("没酿成：" + why);
-
-            QLog.Info("[酿酒] 手动酿一瓶：" + Describe(combo) + (ok ? " → 成功" : " → 失败（" + why + "）"));
-            MarkDirty(0.25f);
-        }
-
         /// <summary>酿某一档：酿界面上选好的瓶数。</summary>
         internal static void BrewTier(BrewTierRow row)
         {
@@ -188,54 +185,89 @@ namespace QoL
                 return;
             }
 
-            int done = 0;
-            string why = null;
-            for (int i = 0; i < want && done < MaxPerClick; i++)
-            {
-                string one;
-                if (!BrewOne(row.Sample, BrewScan.Scan(), out one)) { why = one; break; }
-                done++;
-            }
-
-            if (done == 0) Notify("没酿成：" + why);
-            else if (done < want) Notify("已酿 " + done + " 瓶（" + (why ?? "单次上限") + "）");
-            else Notify("已下料 " + done + " 瓶「" + row.Name + "」");
-
-            QLog.Info("[酿酒] 按档酿造：" + row.Name + " 目标 " + want + " 瓶，实际 " + done + " 瓶" +
-                      (why != null ? "（" + why + "）" : string.Empty));
-
-            MarkDirty(0.3f);
+            StartBatch(row, want, false);
         }
 
-        /// <summary>一键酿造：按表格从上到下，把每一档选好的瓶数全酿了。</summary>
-        internal static void BrewEverything(List<BrewTierRow> rows)
+        /// <summary>全酿这一档：把材料能做的最大瓶数都酿了。</summary>
+        internal static void BrewTierAll(BrewTierRow row)
         {
-            if (rows == null) return;
-
-            int done = 0;
-            string why = null;
-
-            for (int r = 0; r < rows.Count && done < MaxPerClick; r++)
+            if (row == null || row.Sample == null || row.Max <= 0)
             {
-                BrewTierRow row = rows[r];
-                if (row == null || row.Want <= 0 || row.Sample == null) continue;
-
-                for (int i = 0; i < row.Want && done < MaxPerClick; i++)
-                {
-                    string one;
-                    if (!BrewOne(row.Sample, BrewScan.Scan(), out one)) { why = one; break; }
-                    done++;
-                }
-                if (why != null) break;
+                Notify("这一档现在做不了");
+                return;
             }
 
-            if (done == 0) Notify("没酿成：" + why);
-            else if (done >= MaxPerClick) Notify("已下料 " + done + " 瓶（单次上限）");
-            else Notify("一键酿造：已下料 " + done + " 瓶");
+            StartBatch(row, row.Max, true);
+        }
 
-            QLog.Info("[酿酒] 一键酿造：下料 " + done + " 瓶" + (why != null ? "，停下原因：" + why : string.Empty));
+        /// <summary>开一批：一瓶一瓶地做（每瓶要重扫一次库存，一口气做三十瓶会卡）。</summary>
+        private static void StartBatch(BrewTierRow row, int count, bool announce)
+        {
+            if (BatchBusy()) return;
 
+            _batchRow = row;
+            _batchName = row.Name;
+            _batchLeft = count;
+            _batchDone = 0;
+            _batchNext = 0f;
+            _batchAnnounce = announce || count > 8;
+
+            if (_batchAnnounce) Notify("开始酿「" + row.Name + "」" + count + " 瓶…");
+            QLog.Info("[酿酒] 开始酿：" + row.Name + " 目标 " + count + " 瓶");
+        }
+
+        private static bool BatchBusy()
+        {
+            if (_batchLeft <= 0) return false;
+            Notify("上一批还在酿，等它酿完再来");
+            return true;
+        }
+
+        private static void StepBatch()
+        {
+            if (_batchLeft <= 0) return;
+
+            float now = Time.unscaledTime;
+            if (now < _batchNext) return;
+
+            string why;
+            if (!BrewOne(_batchRow.Sample, BrewScan.Scan(), out why))
+            {
+                int done = _batchDone;
+                string name = _batchName;
+                ResetBatch();
+
+                if (done > 0) Notify("已酿 " + done + " 瓶，" + why);
+                else Notify("没酿成：" + why);
+                QLog.Info("[酿酒] 批次中断：" + name + " 已酿 " + done + " 瓶，" + why);
+                MarkDirty(0.3f);
+                return;
+            }
+
+            _batchDone++;
+            _batchLeft--;
+            _batchNext = now + BatchInterval;
+
+            if (_batchLeft > 0) return;
+
+            int all = _batchDone;
+            string done2 = _batchName;
+            bool loud = _batchAnnounce;
+            ResetBatch();
+
+            if (loud) Notify("已下料 " + all + " 瓶「" + done2 + "」");
+            QLog.Info("[酿酒] 批次完成：" + done2 + " " + all + " 瓶");
             MarkDirty(0.35f);
+        }
+
+        private static void ResetBatch()
+        {
+            _batchRow = null;
+            _batchName = null;
+            _batchLeft = 0;
+            _batchDone = 0;
+            _batchNext = 0f;
+            _batchAnnounce = false;
         }
 
         /// <summary>重新扫描：只重画界面。</summary>
@@ -325,12 +357,6 @@ namespace QoL
                       " " + score + " 分 · 果实=" + combo.BerryText + " · 水=" + BrewScan.TierName(tier) +
                       " · 酵母=" + BrewScan.Display(yeast));
             return true;
-        }
-
-        private static string Describe(BrewCombo combo)
-        {
-            return combo.BerryText + " + " + (combo.WaterTier >= 0 ? BrewScan.TierName(combo.WaterTier) : "自动水") +
-                   " + " + (string.IsNullOrEmpty(combo.YeastId) ? "自动酵母" : "指定酵母");
         }
 
         private static GameItem FirstBottle(BrewStock stock)
