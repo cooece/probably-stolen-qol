@@ -7,52 +7,30 @@ using UnityEngine;
 namespace QoL
 {
     /// <summary>
-    /// 解序器自动续卡：点睡觉之后（夜间结算开始那一刻）检查密码解序器——
-    /// 成品卡收进「本来就放着门禁卡」的箱子，输入槽空了就补一张白卡。
-    ///
-    /// 机器规则（反编译 MachineDesequencer 确认）：
-    ///   输入槽只收 ACCESS_CARD；芯片槽决定产出；电力槽按次耗电；
-    ///   **开始条件包含「成品槽必须为空」**，所以成品不收走，机器就再也开不了第二张。
-    ///   输入卡在开始后会被 LockItem 锁住、完成时 Destroy —— 所以运行中一律不碰。
-    ///
-    /// 槽位靠背景贴图名识别（输入槽 blank_card、成品槽 sec_keycard），不猜顺序。
+    /// 解序器自动续卡：睡觉开始 / 第二天开始 / 每秒各检查一次——
+    /// 输出槽有成品卡就收走（走私舱→后舱→柜台），输入槽空着就补一张白卡。
+    /// 机器运行中（STATE_DESEQUENCING）一律不碰。
     /// </summary>
     internal static class DesequencerAutoFeed
     {
         internal const string StateTag = "DESEQUENCER_STATE_TAG";
-        private const string StateWorking = "STATE_DESEQUENCING";
-        private const string BlankCardId = "blank_keycard";
-        private const string InputSprite = "blank_card";
-        private const string OutputSprite = "sec_keycard";
+        private const string Working = "STATE_DESEQUENCING";
+        private const string BlankId = "blank_keycard";
 
-        private static readonly FieldInfo F_backgroundImage =
+        private static readonly FieldInfo BgField =
             AccessTools.Field(typeof(GameSlotInventory), "backgroundImage");
 
-        private const float PollInterval = 1.0f;
-
-        private static float _pollTimer;
-        private static bool _dumpedSlots;
-        private static bool _warnedSlot;
-        private static readonly HashSet<string> MoveDiag = new HashSet<string>();
-
-        /// <summary>搬运失败原因，每类只记一条。</summary>
-        private static void DiagMove(string reason)
-        {
-            if (MoveDiag.Count > 20 || !MoveDiag.Add(reason))
-            {
-                return;
-            }
-
-            QLog.Warn("解序器搬运：" + reason);
-        }
-        private static bool _warnedFlow;
+        private static readonly HashSet<string> Warned = new HashSet<string>();
+        private static List<GameItem> _cache;
+        private static float _cacheAt = -99f;
+        private static float _poll;
 
         internal static bool Enabled
         {
             get
             {
-                QoLSettings settings = ModEntry.Settings;
-                return settings != null && settings.DesequencerAuto.Value;
+                QoLSettings s = ModEntry.Settings;
+                return s != null && s.DesequencerAuto.Value;
             }
         }
 
@@ -60,14 +38,9 @@ namespace QoL
         {
             try
             {
-                // 睡觉「开始」那一刻：趁夜里的周期还没跑，先把白卡补上，今晚才能推进
-                ModHook.OnGoingSleepEarly += OnSleep;
-
-                // 睡觉「结束」那一刻（EndNight 最后一步，已经是第二天开始）：
-                // 夜里的周期跑完了，可能刚解完一张，这时收成品、再补下一张
-                ModHook.OnGoingSleepLate += OnSleep;
-
-                QLog.Info("解序器自动续卡已挂载（睡觉开始 + 第二天开始 + 随时轮询）");
+                ModHook.OnGoingSleepEarly += OnSleep;   // 睡觉开始：今晚要有卡才能推进
+                ModHook.OnGoingSleepLate += OnSleep;    // 第二天开始：夜里可能刚解完
+                QLog.Info("解序器自动续卡已挂载");
             }
             catch (Exception e)
             {
@@ -88,472 +61,166 @@ namespace QoL
             }
         }
 
-        // ---------------------------------------------------------------
-        // 入口
-        // ---------------------------------------------------------------
-
-        /// <summary>
-        /// 常驻检查：成品槽一出现解好的卡就收走，不等睡觉。
-        /// 机器是「成品槽空才能开始下一张」，所以这一步晚一秒，机器就多闲置一秒。
-        /// </summary>
+        /// <summary>白天也每秒看一眼：成品槽一出现卡就收走，别等睡觉。</summary>
         internal static void Tick(float dt)
         {
-            if (!Enabled)
+            if (!Enabled) return;
+
+            _poll += dt;
+            if (_poll < 1f) return;
+            _poll = 0f;
+
+            foreach (GameItem machine in Machines())
             {
-                return;
+                Run(machine, false);
             }
-
-            _pollTimer += dt;
-            if (_pollTimer < PollInterval)
-            {
-                return;
-            }
-
-            _pollTimer = 0f;
-
-            try
-            {
-                List<GameItem> all = AllOwnedItems();
-                if (all.Count == 0)
-                {
-                    return;
-                }
-
-                for (int i = 0; i < all.Count; i++)
-                {
-                    GameItem item = all[i];
-                    if (item == null || !item.IsTag(StateTag))
-                    {
-                        continue;
-                    }
-
-                    try
-                    {
-                        CollectFinished(item, all);
-                    }
-                    catch (Exception e)
-                    {
-                        QLog.Warn("解序器收卡：处理某台机器出错 —— " + e.Message);
-                    }
-                }
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("解序器收卡：检查失败 —— " + e.Message);
-            }
-        }
-
-        /// <summary>成品槽有卡就搬进「本来就放着门禁卡」的箱子；没有成品就什么都不做。</summary>
-        private static void CollectFinished(GameItem machine, List<GameItem> all)
-        {
-            List<GameSlotInventory> slots = GraphUtils.FindAllChildrenType<GameSlotInventory>(machine);
-
-            if (!_dumpedSlots)
-            {
-                _dumpedSlots = true;
-                DumpSlots(slots);
-            }
-
-            GameSlotInventory output = FindSlot(slots, OutputSprite);
-
-            if (output == null || output.childItem == null)
-            {
-                return;
-            }
-
-            GameItem finished = output.childItem;
-            if (!MoveToAnyCardContainer(finished, all, machine))
-            {
-                if (!_warnedFlow)
-                {
-                    _warnedFlow = true;
-                    QLog.Warn("解序器收卡：成品卡搬不出去（目标容器不存在或放不进），先把卡留在输出槽");
-                }
-
-                return;
-            }
-
         }
 
         private static void OnSleep()
         {
-            if (!Enabled)
+            if (!Enabled) return;
+
+            foreach (GameItem machine in Machines())
             {
-                return;
-            }
-
-            try
-            {
-                List<GameItem> all = AllOwnedItems();
-                if (all.Count == 0)
-                {
-                    return;
-                }
-
-                // 先把所有解序器的槽位收集起来：白卡不能从别的解序器槽里拿
-                List<GameInventory> reserved = CollectReservedSlots(all);
-
-                int machines = 0;
-                for (int i = 0; i < all.Count; i++)
-                {
-                    GameItem item = all[i];
-                    if (item == null || !item.IsTag(StateTag))
-                    {
-                        continue;
-                    }
-
-                    machines++;
-                    try
-                    {
-                        ProcessMachine(item, all, reserved);
-                    }
-                    catch (Exception e)
-                    {
-                        QLog.Warn("解序器续卡：处理某台机器出错 —— " + e.Message);
-                    }
-                }
-
-                if (machines == 0)
-                {
-                    QLog.Info("解序器续卡：店里没找到解序器");
-                }
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("解序器续卡：检查失败 —— " + e.Message);
+                Run(machine, true);
             }
         }
 
-        private static void ProcessMachine(GameItem machine, List<GameItem> all, List<GameInventory> reserved)
+        // ---------------------------------------------------------------
+        // 主流程
+        // ---------------------------------------------------------------
+
+        /// <param name="refill">睡觉时才补白卡；平时轮询只收成品。</param>
+        private static void Run(GameItem machine, bool refill)
         {
-            string state;
             try
             {
-                state = machine.GetTagReadonly(StateTag).GetString();
+                if (string.Equals(Str(machine, StateTag), Working, StringComparison.Ordinal))
+                {
+                    return;   // 正在解密：输入卡被锁，别动
+                }
+
+                List<GameSlotInventory> slots = GraphUtils.FindAllChildrenType<GameSlotInventory>(machine);
+                GameSlotInventory input = FindSlot(slots, "blank_card");
+                GameSlotInventory output = FindSlot(slots, "sec_keycard");
+
+                if (input == null || output == null)
+                {
+                    WarnOnce("认不出解序器的输入/成品槽");
+                    return;
+                }
+
+                // 1) 收成品（机器要求成品槽为空才能开下一张）
+                if (output.childItem != null && !Store(output.childItem))
+                {
+                    WarnOnce("成品卡放不进任何容器，先留在输出槽");
+                    return;
+                }
+
+                // 2) 补白卡
+                if (!refill || input.childItem != null) return;
+
+                GameItem blank = FindBlank();
+                if (blank == null)
+                {
+                    Notice("解序器没白卡了");
+                    return;
+                }
+
+                if (!Move(input, blank))
+                {
+                    WarnOnce("白卡放不进输入槽");
+                    return;
+                }
+
+                QLog.Info("解序器续卡：已补上一张白卡");
+            }
+            catch (Exception e)
+            {
+                WarnOnce("处理解序器出错：" + e.Message);
+            }
+        }
+
+        /// <summary>成品卡去处：走私舱（大的优先）→ 后舱 → 柜台；都不行就留在原处。</summary>
+        private static bool Store(GameItem card)
+        {
+            try
+            {
+                if (!GeneralHelper.IsItemOwned(card)) GeneralHelper.SetItemOwned(card, true);
             }
             catch
             {
-                return;
+                // 归属标记失败不致命，放不进去会退回来
             }
 
-            if (string.Equals(state, StateWorking, StringComparison.Ordinal))
-            {
-                // 正在解密：输入卡被锁、进度在走，一根手指都别动
-                return;
-            }
-
-            List<GameSlotInventory> slots = GraphUtils.FindAllChildrenType<GameSlotInventory>(machine);
-            GameSlotInventory input = FindSlot(slots, InputSprite);
-            GameSlotInventory output = FindSlot(slots, OutputSprite);
-
-            if (input == null || output == null)
-            {
-                if (!_warnedSlot)
-                {
-                    _warnedSlot = true;
-                    QLog.Warn("解序器续卡：认不出输入/成品槽（背景贴图没对上），这台跳过");
-                }
-
-                return;
-            }
-
-            // 1) 先把成品收走，否则机器开不了下一张
-            if (output.childItem != null)
-            {
-                GameItem finished = output.childItem;
-                if (!MoveToAnyCardContainer(finished, all, machine))
-                {
-                    if (!_warnedFlow)
-                    {
-                        _warnedFlow = true;
-                        QLog.Warn("解序器续卡：成品卡找不到可放的容器（没有已放门禁卡的箱子？），这次没有补卡");
-                    }
-
-                    return;
-                }
-
-            }
-
-            // 2) 输入槽有卡就不动
-            if (input.childItem != null)
-            {
-                return;
-            }
-
-            // 3) 找白卡补上
-            GameItem blank = FindBlankCard(all, machine, input, reserved);
-            if (blank == null)
-            {
-                Notice("解序器没白卡了");
-                return;
-            }
-
-            if (!MoveCard(input, blank))
-            {
-                QLog.Warn("解序器续卡：白卡放不进输入槽（可能被锁或槽位不认）");
-                return;
-            }
-
-            if (ReferenceEquals(input.childItem, blank))
-            {
-                QLog.Info("解序器续卡：已补上一张白卡");
-            }
-            else
-            {
-                QLog.Warn("解序器续卡：白卡移动后输入槽里不是它，请检查");
-            }
-        }
-
-        // ---------------------------------------------------------------
-        // 槽位识别
-        // ---------------------------------------------------------------
-
-        /// <summary>排查用：把解序器各槽的子槽背景贴图名打一条日志，确认识别条件写对了。</summary>
-        private static void DumpSlots(List<GameSlotInventory> slots)
-        {
-            try
-            {
-                if (slots == null)
-                {
-                    QLog.Warn("解序器槽位诊断：一个槽都没找到");
-                    return;
-                }
-
-                string text = "解序器槽位诊断（共 " + slots.Count + " 个）：";
-                for (int i = 0; i < slots.Count; i++)
-                {
-                    string name = "?";
-                    try
-                    {
-                        TreeNodeRender bg = F_backgroundImage != null
-                            ? F_backgroundImage.GetValue(slots[i]) as TreeNodeRender
-                            : null;
-                        if (bg != null && bg.image != null && bg.image.sprite != null)
-                        {
-                            name = bg.image.sprite.name;
-                        }
-                        else
-                        {
-                            name = "(无背景)";
-                        }
-                    }
-                    catch
-                    {
-                        name = "(读取失败)";
-                    }
-
-                    text += " [" + i + "]=" + name;
-                }
-
-                QLog.Info(text);
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("解序器槽位诊断失败：" + e.Message);
-            }
-        }
-
-        /// <summary>所有解序器的子槽（输入/成品/芯片/电力），白卡来源要避开它们。</summary>
-        private static List<GameInventory> CollectReservedSlots(List<GameItem> all)
-        {
-            List<GameInventory> reserved = new List<GameInventory>();
-
-            for (int i = 0; i < all.Count; i++)
-            {
-                GameItem item = all[i];
-                if (item == null || !item.IsTag(StateTag))
-                {
-                    continue;
-                }
-
-                List<GameSlotInventory> slots;
-                try
-                {
-                    slots = GraphUtils.FindAllChildrenType<GameSlotInventory>(item);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (slots == null)
-                {
-                    continue;
-                }
-
-                for (int j = 0; j < slots.Count; j++)
-                {
-                    if (slots[j] != null)
-                    {
-                        reserved.Add(slots[j]);
-                    }
-                }
-            }
-
-            return reserved;
-        }
-
-        /// <summary>靠槽位背景贴图名认出输入槽 / 成品槽，比猜槽位顺序可靠。</summary>
-        private static GameSlotInventory FindSlot(List<GameSlotInventory> slots, string spriteName)
-        {
-            if (slots == null || F_backgroundImage == null)
-            {
-                return null;
-            }
-
-            for (int i = 0; i < slots.Count; i++)
-            {
-                GameSlotInventory slot = slots[i];
-                if (slot == null)
-                {
-                    continue;
-                }
-
-                try
-                {
-                    TreeNodeRender background = F_backgroundImage.GetValue(slot) as TreeNodeRender;
-                    if (background == null || background.image == null || background.image.sprite == null)
-                    {
-                        continue;
-                    }
-
-                    if (string.Equals(background.image.sprite.name, spriteName, StringComparison.Ordinal))
-                    {
-                        return slot;
-                    }
-                }
-                catch
-                {
-                    // 取不到就当没这个槽
-                }
-            }
-
-            return null;
-        }
-
-        // ---------------------------------------------------------------
-        // 成品卡：放进本来就装着门禁卡的容器
-        // ---------------------------------------------------------------
-
-        /// <summary>
-        /// 成品卡去处：先试「装着同一种卡」的容器（可能有多个，第一个满了就换下一个），
-        /// 再试「任何装着门禁卡」的容器，最后退后仓、背包。每个都真的验证过才继续。
-        /// </summary>
-        private static bool MoveToAnyCardContainer(GameItem card, List<GameItem> all, GameItem machine)
-        {
             EmporiumEntry entry = EmporiumEntry.Instance;
 
-            // 刚解出来的卡还没打「属于玩家」标记，而玩家容器（含走私舱）的准入条件正是 IsItemOwned
-            try
+            GameInventory bay = FindSmugglerBay();
+            if (bay != null && Move(bay, card))
             {
-                if (!GeneralHelper.IsItemOwned(card))
-                {
-                    GeneralHelper.SetItemOwned(card, true);
-                    QLog.Info("解序器收卡：给成品卡补上归属标记");
-                }
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("解序器收卡：补归属标记失败 —— " + e.Message);
-            }
-
-            // 1) 走私舱（升级版 8×8 优先，未升级 5×5 次之——按容器宽度取最大的那个）
-            GameInventory bay = FindSmugglerBay(all, machine);
-            if (bay != null && MoveCard(bay, card))
-            {
-                QLog.Info("解序器收卡：成品「" + Name(card) + "」已放进走私舱");
+                QLog.Info("解序器收卡：成品「" + card.name + "」已放进走私舱");
                 return true;
             }
 
-            if (bay == null)
+            if (entry != null && Move(entry.backInvinvElement, card))
             {
-                DiagMove("没找到走私舱，退后舱");
-            }
-            else
-            {
-                DiagMove("走私舱放不下（这张卡占 " + Size(card) + " 格），退后舱");
-            }
-
-            // 2) 后舱
-            if (entry != null && MoveCard(entry.backInvinvElement, card))
-            {
-                QLog.Info("解序器收卡：成品「" + Name(card) + "」已放后舱");
+                QLog.Info("解序器收卡：成品「" + card.name + "」已放后舱");
                 return true;
             }
 
-            // 3) 柜台
-            if (entry != null && MoveCard(entry.frontInvinvElement, card))
+            if (entry != null && Move(entry.frontInvinvElement, card))
             {
-                QLog.Info("解序器收卡：成品「" + Name(card) + "」已放柜台");
+                QLog.Info("解序器收卡：成品「" + card.name + "」已放柜台");
                 return true;
             }
 
-            // 都不行就留在输出槽，绝不丢到海报后那种地方
             return false;
         }
 
         // ---------------------------------------------------------------
-        // 白卡来源
+        // 搬运：先移出、再放入、用父容器验证；失败退回原处
         // ---------------------------------------------------------------
 
-        private static GameItem FindBlankCard(List<GameItem> all, GameItem machine, GameSlotInventory input,
-            List<GameInventory> reserved)
+        private static bool Move(GameInventory target, GameItem item)
         {
-            for (int i = 0; i < all.Count; i++)
-            {
-                GameItem item = all[i];
-                if (item == null || !string.Equals(item.identifier, BlankCardId, StringComparison.Ordinal))
-                {
-                    continue;
-                }
+            if (target == null || item == null) return false;
 
-                if (!Usable(item, machine, input, reserved))
-                {
-                    continue;
-                }
+            GameInventory from = item.parentInventory;
+            if (from == null || ReferenceEquals(from, target)) return false;
 
-                return item;
-            }
-
-            return null;
-        }
-
-        /// <summary>
-        /// 白卡能不能拿：要属于玩家、不在锁着的箱子里、没被拖拽、不在解序器自己的槽里。
-        /// 暗格里的白卡**允许**（这是用户明确要求的，和换滤芯那边相反）。
-        /// </summary>
-        private static bool Usable(GameItem card, GameItem machine, GameSlotInventory input,
-            List<GameInventory> reserved)
-        {
             try
             {
-                if (!GeneralHelper.IsItemOwned(card))
-                {
-                    return false;
-                }
+                if (target.IsInsertLocked()) return false;
 
-                if (card.IsTag("ITEM_BEHIND_LOCK_TAG") || card.IsTag("LOCKED_TAG"))
-                {
-                    return false;
-                }
+                SlotMarker marker = target.TryFindOneValidInventorySlot(item);
+                if (marker == null || marker.numTransfer < 1) return false;
 
-                if (input != null && card.parentInventory == input)
-                {
-                    return false;
-                }
+                if (!from.Expel(item)) return false;
 
-                if (reserved != null && card.parentInventory != null && reserved.Contains(card.parentInventory))
-                {
-                    return false;      // 别的解序器槽里的卡，别拿
-                }
+                marker.TryAcceptOnce(1);
+                if (ReferenceEquals(item.parentInventory, target)) return true;
 
-                ItemMouseDragHandler drag = ItemMouseDragHandler.current;
-                if (drag != null && ReferenceEquals(drag.GetCurrentItem(), card))
-                {
-                    return false;
-                }
+                TryMoveInto(from, item);   // 没放进去就退回，别弄丢
+                WarnOnce("物品搬到 " + target.GetType().Name + " 后位置没变");
+                return false;
+            }
+            catch (Exception e)
+            {
+                WarnOnce("搬运出错：" + e.Message);
+                return false;
+            }
+        }
 
-                return true;
+        private static bool TryMoveInto(GameInventory target, GameItem item)
+        {
+            if (target == null || item == null) return false;
+
+            try
+            {
+                if (target.IsInsertLocked()) return false;
+
+                SlotMarker marker = target.TryFindOneValidInventorySlot(item);
+                return marker != null && marker.numTransfer > 0 && marker.TryAcceptOnce(1) == 1;
             }
             catch
             {
@@ -562,119 +229,56 @@ namespace QoL
         }
 
         // ---------------------------------------------------------------
-        // 工具
+        // 查找
         // ---------------------------------------------------------------
 
-        /// <summary>和游戏自己的 FindAllItem 一致：前厅、后仓、柜台、背包四个窗口全扫。</summary>
-        private static List<GameItem> _itemsCache;
-        private static float _itemsCacheAt = -99f;
-
-        internal static List<GameItem> AllOwnedItems()
+        /// <summary>槽位靠背景贴图名认出（输入槽 blank_card、成品槽 sec_keycard），不猜顺序。</summary>
+        private static GameSlotInventory FindSlot(List<GameSlotInventory> slots, string spriteName)
         {
-            // 两个轮询（收卡 1 秒、标题栏按钮 0.4 秒）共用一份快照，别各自把整棵树走一遍
-            if (_itemsCache != null && Time.unscaledTime - _itemsCacheAt < 0.5f)
+            if (slots == null || BgField == null) return null;
+
+            for (int i = 0; i < slots.Count; i++)
             {
-                return _itemsCache;
-            }
-
-            List<GameItem> list = new List<GameItem>();
-
-            EmporiumEntry entry = EmporiumEntry.Instance;
-            if (entry == null)
-            {
-                return list;
-            }
-
-            Add(list, entry.frontInvWindow);
-            Add(list, entry.backInvWindow);
-            Add(list, entry.backInvinvElementCounter);
-            Add(list, entry.invWindow);
-
-            _itemsCache = list;
-            _itemsCacheAt = Time.unscaledTime;
-            return list;
-        }
-
-        private static void Add(List<GameItem> list, GraphNodeStorage window)
-        {
-            if (window == null)
-            {
-                return;
-            }
-
-            try
-            {
-                List<GameItem> found = GraphUtils.FindAllChildrenType<GameItem>(window);
-                if (found != null)
+                try
                 {
-                    list.AddRange(found);
+                    TreeNodeRender bg = BgField.GetValue(slots[i]) as TreeNodeRender;
+                    if (bg != null && bg.image != null && bg.image.sprite != null
+                        && string.Equals(bg.image.sprite.name, spriteName, StringComparison.Ordinal))
+                    {
+                        return slots[i];
+                    }
+                }
+                catch
+                {
+                    // 取不到就跳过
                 }
             }
-            catch
-            {
-                // 某个窗口还没准备好就跳过
-            }
+
+            return null;
         }
 
-        /// <summary>
-        /// 真正把物品搬到另一个容器：先从容器的原处移出，再放进目标，最后**用父容器验证**。
-        /// 只靠 TryAcceptOnce 的返回值会骗人（实测返回 1 但物品没动，日志一秒一条刷屏）。
-        /// 放不进去就退回原容器，绝不让物品消失。
-        /// </summary>
-        /// <summary>
-        /// 找走私舱：容器 inventory 的 identifier 都是 "smuggler_bay"
-        /// （未升级 5×5、升级版 8×8 同一个 id）。有多个时取最宽的那个，也就是升级版。
-        /// </summary>
-        private static GameInventory FindSmugglerBay(List<GameItem> all, GameItem machine)
+        /// <summary>走私舱：容器 identifier 都是 smuggler_bay（5×5 / 8×8），取最宽的即升级版。</summary>
+        private static GameInventory FindSmugglerBay()
         {
             GameInventory best = null;
             int bestWidth = -1;
 
-            for (int i = 0; i < all.Count; i++)
+            foreach (GameItem host in AllOwnedItems())
             {
-                GameItem host = all[i];
-                if (host == null || host == machine)
-                {
-                    continue;
-                }
+                if (host == null) continue;
 
                 List<GameInventory> invs;
-                try
-                {
-                    invs = GraphUtils.FindAllChildrenType<GameInventory>(host);
-                }
-                catch
-                {
-                    continue;
-                }
+                try { invs = GraphUtils.FindAllChildrenType<GameInventory>(host); }
+                catch { continue; }
 
-                if (invs == null)
+                if (invs == null) continue;
+
+                foreach (GameInventory inv in invs)
                 {
-                    continue;
-                }
+                    if (inv == null || !string.Equals(inv.identifier, "smuggler_bay", StringComparison.Ordinal)) continue;
 
-                for (int j = 0; j < invs.Count; j++)
-                {
-                    GameInventory inv = invs[j];
-                    if (inv == null || !string.Equals(inv.identifier, "smuggler_bay", StringComparison.Ordinal))
-                    {
-                        continue;
-                    }
-
-                    int width = 0;
-                    try
-                    {
-                        GameGridInventory grid = inv as GameGridInventory;
-                        if (grid != null)
-                        {
-                            width = grid.widthPixels;
-                        }
-                    }
-                    catch
-                    {
-                        width = 0;
-                    }
-
+                    GameGridInventory grid = inv as GameGridInventory;
+                    int width = grid != null ? grid.widthPixels : 0;
                     if (width > bestWidth)
                     {
                         bestWidth = width;
@@ -686,140 +290,99 @@ namespace QoL
             return best;
         }
 
-        /// <summary>这件物品占几格（宽×高），诊断用。</summary>
-        private static string Size(GameItem item)
+        /// <summary>白卡：自己的、不在锁箱里、没被拖拽、不在别的解序器槽里。</summary>
+        private static GameItem FindBlank()
         {
-            try
+            foreach (GameItem item in AllOwnedItems())
             {
-                GridShape shape = item.modifiedShape;
-                if (shape != null && shape.globalWidth > 0 && shape.globalHeight > 0)
+                if (item == null || !string.Equals(item.identifier, BlankId, StringComparison.Ordinal)) continue;
+
+                try
                 {
-                    return shape.globalWidth + "×" + shape.globalHeight;
+                    if (!GeneralHelper.IsItemOwned(item)) continue;
+                    if (item.IsTag("ITEM_BEHIND_LOCK_TAG") || item.IsTag("LOCKED_TAG")) continue;
+
+                    GameInventory parent = item.parentInventory;
+                    if (parent != null)
+                    {
+                        GameItem host = parent.GetParentItem();
+                        if (host != null && host.IsTag(StateTag)) continue;   // 别的解序器槽里的卡
+                    }
+
+                    ItemMouseDragHandler drag = ItemMouseDragHandler.current;
+                    if (drag != null && ReferenceEquals(drag.GetCurrentItem(), item)) continue;
+
+                    return item;
+                }
+                catch
+                {
+                    // 这一件判断不了就跳过
                 }
             }
-            catch
-            {
-                // 下面返回未知
-            }
 
-            return "?";
+            return null;
         }
 
-        private static bool MoveCard(GameInventory target, GameItem item)
+        private static List<GameItem> Machines()
         {
-            if (target == null || item == null)
+            List<GameItem> list = new List<GameItem>();
+            foreach (GameItem item in AllOwnedItems())
             {
-                return false;
+                if (item != null && item.IsTag(StateTag)) list.Add(item);
             }
 
-            GameInventory source = item.parentInventory;
-            if (source == null || ReferenceEquals(source, target))
-            {
-                return false;
-            }
-
-            SlotMarker marker;
-            try
-            {
-                if (target.IsInsertLocked())
-                {
-                    DiagMove("目标容器禁止插入：" + target.GetType().Name);
-                    return false;
-                }
-
-                marker = target.TryFindOneValidInventorySlot(item);
-                if (marker == null)
-                {
-                    DiagMove("目标容器找不到能放它的格子（可能是满了）：" + target.GetType().Name);
-                    return false;
-                }
-
-                if (marker.numTransfer < 1)
-                {
-                    DiagMove("目标格子 numTransfer=" + marker.numTransfer);
-                    return false;
-                }
-            }
-            catch (Exception e)
-            {
-                DiagMove("查格子时抛异常：" + e.Message);
-                return false;
-            }
-
-            try
-            {
-                if (!source.Expel(item))
-                {
-                    DiagMove("从原容器移出失败（Expel=false），原容器=" + source.GetType().Name);
-                    return false;
-                }
-            }
-            catch (Exception e)
-            {
-                DiagMove("移出时抛异常：" + e.Message);
-                return false;
-            }
-
-            try
-            {
-                marker.TryAcceptOnce(1);
-            }
-            catch
-            {
-                // 下面用父容器验证结果
-            }
-
-            if (ReferenceEquals(item.parentInventory, target))
-            {
-                return true;
-            }
-
-            DiagMove("放进目标后父容器仍不是目标（实际=" +
-                (item.parentInventory == null ? "null" : item.parentInventory.GetType().Name) + "）");
-
-            // 没放进去：退回原容器，别把卡弄丢
-            TryMoveInto(source, item);
-            return false;
+            return list;
         }
 
-        private static bool TryMoveInto(GameInventory target, GameItem item)
+        /// <summary>前厅、后仓、柜台、背包四个窗口的物品，0.5 秒共用一份快照。</summary>
+        internal static List<GameItem> AllOwnedItems()
         {
-            if (target == null || item == null)
+            if (_cache != null && Time.unscaledTime - _cacheAt < 0.5f) return _cache;
+
+            List<GameItem> list = new List<GameItem>();
+            EmporiumEntry e = EmporiumEntry.Instance;
+            if (e != null)
             {
-                return false;
+                AddTo(list, e.frontInvWindow);
+                AddTo(list, e.backInvWindow);
+                AddTo(list, e.backInvinvElementCounter);
+                AddTo(list, e.invWindow);
             }
+
+            _cache = list;
+            _cacheAt = Time.unscaledTime;
+            return list;
+        }
+
+        private static void AddTo(List<GameItem> list, GraphNodeStorage window)
+        {
+            if (window == null) return;
 
             try
             {
-                if (target.IsInsertLocked())
-                {
-                    return false;
-                }
-
-                SlotMarker marker = target.TryFindOneValidInventorySlot(item);
-                if (marker == null || marker.numTransfer < 1)
-                {
-                    return false;
-                }
-
-                return marker.TryAcceptOnce(1) == 1;
+                List<GameItem> found = GraphUtils.FindAllChildrenType<GameItem>(window);
+                if (found != null) list.AddRange(found);
             }
             catch
             {
-                return false;
+                // 某个窗口还没准备好
             }
         }
 
-        private static string Name(GameItem item)
+        // ---------------------------------------------------------------
+        // 小工具
+        // ---------------------------------------------------------------
+
+        private static string Str(GameItem item, string tag)
         {
-            try
-            {
-                return item.name;
-            }
-            catch
-            {
-                return "?";
-            }
+            try { return item.GetTagReadonly(tag).GetString(); }
+            catch { return null; }
+        }
+
+        private static void WarnOnce(string text)
+        {
+            if (Warned.Count > 20 || !Warned.Add(text)) return;
+            QLog.Warn("解序器：" + text);
         }
 
         private static void Notice(string text)
@@ -827,17 +390,14 @@ namespace QoL
             try
             {
                 ReputationUIManager ui = ReputationUIManager.Instance;
-                if (ui != null)
-                {
-                    ui.Notify(text);
-                }
+                if (ui != null) ui.Notify(text);
             }
             catch
             {
                 // 提示失败不影响功能
             }
 
-            QLog.Info("解序器续卡：" + text);
+            QLog.Info("解序器：" + text);
         }
     }
 }
