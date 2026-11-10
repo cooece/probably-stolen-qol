@@ -460,14 +460,35 @@ namespace QoL
                 QLog.Warn("解序器收卡：补归属标记失败 —— " + e.Message);
             }
 
-            // 门禁卡是违禁品：第一顺位放走私暗格（玩家的违禁品本来就都存在那儿）
+            // 门禁卡是违禁品。优先放「升级后的暗格」= 走私舱（smuggler_bay，5×5 或升级版 8×8），
+            // 玩家平时把违禁品都存那儿；没有走私舱再退基础暗格（hiddenElement 只有 2×2）。
+            GameInventory bay = FindSmugglerBay(all, machine);
+            if (bay != null && MoveCard(bay, card))
+            {
+                QLog.Info("解序器收卡：成品「" + Name(card) + "」已放进走私舱");
+                return true;
+            }
+
             if (entry != null && MoveCard(entry.hiddenElement, card))
             {
                 QLog.Info("解序器收卡：成品「" + Name(card) + "」已放进走私暗格");
                 return true;
             }
 
-            // 暗格放不下（满了）：退后仓，再退背包
+            if (entry != null && entry.hiddenElement != null)
+            {
+                DiagMove("暗格放不下：这张卡占 " + Size(card) + " 格，暗格（2×2）已满或放不进");
+            }
+
+            // 暗格满了：先找别的已经装着门禁卡的容器（玩家平时收卡的那个箱子）
+            if (TryMoveToCandidates(card, all, machine, card.identifier)
+                || TryMoveToCandidates(card, all, machine, null))
+            {
+                QLog.Info("解序器收卡：暗格放不下，成品「" + Name(card) + "」已放进已有的卡箱");
+                return true;
+            }
+
+            // 最后退后仓、背包
             if (entry != null)
             {
                 if (MoveCard(entry.backInvinvElement, card))
@@ -603,6 +624,141 @@ namespace QoL
         /// 只靠 TryAcceptOnce 的返回值会骗人（实测返回 1 但物品没动，日志一秒一条刷屏）。
         /// 放不进去就退回原容器，绝不让物品消失。
         /// </summary>
+        /// <summary>
+        /// 找走私舱：它就是「升级过的暗格」，容器 inventory 自己的 identifier 是 "smuggler_bay"
+        /// （小型 5×5、升级版 8×8 都是这个 id），不靠宿主物品的 id 猜。
+        /// </summary>
+        private static GameInventory FindSmugglerBay(List<GameItem> all, GameItem machine)
+        {
+            for (int i = 0; i < all.Count; i++)
+            {
+                GameItem host = all[i];
+                if (host == null || host == machine)
+                {
+                    continue;
+                }
+
+                List<GameInventory> invs;
+                try
+                {
+                    invs = GraphUtils.FindAllChildrenType<GameInventory>(host);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (invs == null)
+                {
+                    continue;
+                }
+
+                for (int j = 0; j < invs.Count; j++)
+                {
+                    GameInventory inv = invs[j];
+                    if (inv == null)
+                    {
+                        continue;
+                    }
+
+                    if (string.Equals(inv.identifier, "smuggler_bay", StringComparison.Ordinal))
+                    {
+                        return inv;
+                    }
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>在满足条件的容器里逐个试，返回是否成功放进某一个。</summary>
+        private static bool TryMoveToCandidates(GameItem card, List<GameItem> all, GameItem machine, string sameId)
+        {
+            for (int i = 0; i < all.Count; i++)
+            {
+                GameItem host = all[i];
+                if (host == null || host == machine || host.IsTag(StateTag))
+                {
+                    continue;
+                }
+
+                List<GameInventory> invs;
+                try
+                {
+                    invs = GraphUtils.FindAllChildrenType<GameInventory>(host);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (invs == null)
+                {
+                    continue;
+                }
+
+                for (int j = 0; j < invs.Count; j++)
+                {
+                    GameInventory inv = invs[j];
+                    if (inv == null || !ContainsCard(inv, sameId))
+                    {
+                        continue;
+                    }
+
+                    if (MoveCard(inv, card))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ContainsCard(GameInventory inv, string sameId)
+        {
+            List<GameItem> inside = inv.childItems;
+            if (inside == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < inside.Count; i++)
+            {
+                GameItem item = inside[i];
+                if (item == null || !item.IsGameItemType("ACCESS_CARD"))
+                {
+                    continue;
+                }
+
+                if (sameId == null || string.Equals(item.identifier, sameId, StringComparison.Ordinal))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>这件物品占几格（宽×高），诊断用。</summary>
+        private static string Size(GameItem item)
+        {
+            try
+            {
+                GridShape shape = item.modifiedShape;
+                if (shape != null && shape.globalWidth > 0 && shape.globalHeight > 0)
+                {
+                    return shape.globalWidth + "×" + shape.globalHeight;
+                }
+            }
+            catch
+            {
+                // 下面返回未知
+            }
+
+            return "?";
+        }
+
         private static bool MoveCard(GameInventory target, GameItem item)
         {
             if (target == null || item == null)

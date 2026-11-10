@@ -26,10 +26,10 @@ namespace QoL
 
             try
             {
-                var build = AccessTools.Method(typeof(ModConfig), "BuildEntry");
+                var build = AccessTools.Method(typeof(ModConfigWindow), "BuildEntry");
                 if (build == null)
                 {
-                    QLog.Warn("找不到 ModConfig.BuildEntry，解序器设置项仍会显示在模组页");
+                    QLog.Warn("找不到 ModConfigWindow.BuildEntry，解序器设置项仍会显示在模组页");
                     return;
                 }
 
