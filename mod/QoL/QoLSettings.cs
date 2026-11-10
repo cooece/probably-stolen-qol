@@ -104,6 +104,9 @@ namespace QoL
         /// <summary>全自动换电：一个下拉同时管开关、时机与提前量。</summary>
         internal ConfigEntry<string> AutoBatterySwapMode { get; }
 
+        /// <summary>解序器自动续卡：点睡觉时检查解序器，缺白卡就补。</summary>
+        internal ConfigEntry<bool> DesequencerAuto { get; }
+
         /// <summary>自动换滤芯：一个下拉同时管开关与时机（过夜检查 / 随时换）。</summary>
         internal ConfigEntry<string> AutoFilterSwapMode { get; }
 
@@ -329,6 +332,14 @@ namespace QoL
                 new[] { AutoBatterySwap.Off, AutoBatterySwap.MorningOnly,
                         AutoBatterySwap.Auto1, AutoBatterySwap.Auto2 },
                 () => "机器没电时自动换上有电的电池，旧电池放回充电器；水瓶打印机这类手动用的，按按钮才装电池、用完自动取回。数字越大换得越早。");
+
+            // ---------------- 机器 ----------------
+            DesequencerAuto = _config.Define(
+                "machine.desequencer_auto",
+                true,
+                "机器",
+                () => "解序器自动续卡",
+                () => "点睡觉之后自动检查密码解序器：成品卡收进已经放着门禁卡的箱子，输入槽空了就补一张白卡。白卡从自己所有东西里找（暗格也算），锁着的箱子和顾客的东西不碰。");
 
             // ---------------- 用水 ----------------
             AutoFilterSwapMode = _config.Define(
