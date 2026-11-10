@@ -173,7 +173,6 @@ namespace QoL
                 return;
             }
 
-            QLog.Info("解序器收卡：成品「" + Name(finished) + "」已收进箱子");
         }
 
         private static void OnSleep()
@@ -273,7 +272,6 @@ namespace QoL
                     return;
                 }
 
-                QLog.Info("解序器续卡：成品「" + Name(finished) + "」已收进箱子");
             }
 
             // 2) 输入槽有卡就不动
@@ -568,8 +566,17 @@ namespace QoL
         // ---------------------------------------------------------------
 
         /// <summary>和游戏自己的 FindAllItem 一致：前厅、后仓、柜台、背包四个窗口全扫。</summary>
+        private static List<GameItem> _itemsCache;
+        private static float _itemsCacheAt = -99f;
+
         internal static List<GameItem> AllOwnedItems()
         {
+            // 两个轮询（收卡 1 秒、标题栏按钮 0.4 秒）共用一份快照，别各自把整棵树走一遍
+            if (_itemsCache != null && Time.unscaledTime - _itemsCacheAt < 0.5f)
+            {
+                return _itemsCache;
+            }
+
             List<GameItem> list = new List<GameItem>();
 
             EmporiumEntry entry = EmporiumEntry.Instance;
@@ -582,6 +589,9 @@ namespace QoL
             Add(list, entry.backInvWindow);
             Add(list, entry.backInvinvElementCounter);
             Add(list, entry.invWindow);
+
+            _itemsCache = list;
+            _itemsCacheAt = Time.unscaledTime;
             return list;
         }
 

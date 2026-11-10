@@ -337,7 +337,7 @@ namespace QoL
             DesequencerAuto = _config.Define(
                 "machine.desequencer_auto",
                 true,
-                "机器",
+                "电力",
                 () => "解序器自动续卡",
                 () => "点睡觉之后自动检查密码解序器：成品卡收进已经放着门禁卡的箱子，输入槽空了就补一张白卡。白卡从自己所有东西里找（暗格也算），锁着的箱子和顾客的东西不碰。");
 
