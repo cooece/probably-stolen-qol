@@ -445,17 +445,42 @@ namespace QoL
         {
             EmporiumEntry entry = EmporiumEntry.Instance;
 
+            // 刚解出来的卡还没打「属于玩家」标记，而暗格的准入条件正是 IsItemOwned，
+            // 不打标会被暗格直接拒绝（实测退到了后仓）。这里按游戏自己的方式补上。
+            try
+            {
+                if (!GeneralHelper.IsItemOwned(card))
+                {
+                    GeneralHelper.SetItemOwned(card, true);
+                    QLog.Info("解序器收卡：给成品卡补上归属标记");
+                }
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("解序器收卡：补归属标记失败 —— " + e.Message);
+            }
+
             // 门禁卡是违禁品：第一顺位放走私暗格（玩家的违禁品本来就都存在那儿）
             if (entry != null && MoveCard(entry.hiddenElement, card))
             {
+                QLog.Info("解序器收卡：成品「" + Name(card) + "」已放进走私暗格");
                 return true;
             }
 
             // 暗格放不下（满了）：退后仓，再退背包
             if (entry != null)
             {
-                if (MoveCard(entry.backInvinvElement, card)) return true;
-                if (MoveCard(entry.invElement, card)) return true;
+                if (MoveCard(entry.backInvinvElement, card))
+                {
+                    QLog.Info("解序器收卡：暗格放不下，成品「" + Name(card) + "」已放后仓");
+                    return true;
+                }
+
+                if (MoveCard(entry.invElement, card))
+                {
+                    QLog.Info("解序器收卡：暗格与后仓都放不下，成品「" + Name(card) + "」已放背包");
+                    return true;
+                }
             }
 
             return false;
