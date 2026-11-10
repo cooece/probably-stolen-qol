@@ -47,14 +47,20 @@ namespace QoL
         private const string HarmonyId = "local.qol.brew";
         private const string PanelKeyId = "brew.panel_key";
 
-        private static Harmony _harmony;
-        private static bool _capturing;
-        private static TMP_InputField _captureField;
-        private static int _captureFrame;
-        private static KeyCode[] _keyList;
+        /// <summary>设置面板里那一行输入框的录制配置（状态机在 KeyCapture 里）。</summary>
+        private static readonly KeyCapture.Binding Capture = new KeyCapture.Binding
+        {
+            KeyId = PanelKeyId,
+            Tag = "[酿酒] ",
+            Normalize = Raw => KeyNameOf(ParseKeyRaw(Raw)),
+            NameOf = KeyNameOf,
+            Bind = OnKeyCaptured,
+            Cancel = ClearSelection,
+            Toast = Notify
+        };
 
         /// <summary>正在等玩家按键（别的功能要避开）。</summary>
-        internal static bool IsCapturing { get { return _capturing; } }
+        internal static bool IsCapturing => KeyCapture.IsCapturing;
 
         // ---------------------------------------------------------------
         // 挂载 / 卸载
@@ -65,7 +71,8 @@ namespace QoL
             if (_applied) return;
             _applied = true;
             _dirty = false;
-            PatchSettingsInput();
+            KeyCapture.Add(Capture);
+            KeyCapture.EnsurePatched();
             QLog.Info("[酿酒] 工坊已挂载（热键见设置项「酿酒工坊」）");
         }
 
@@ -76,7 +83,7 @@ namespace QoL
             _keyReady = false;
             _keyRaw = null;
             ResetBatch();
-            UnpatchSettingsInput();
+            KeyCapture.Remove(Capture);
 
             try { BrewWindow.Close(); }
             catch (Exception e) { QLog.Warn("[酿酒] 关窗失败：" + e.Message); }
@@ -91,9 +98,9 @@ namespace QoL
             if (!_applied) return;
 
             // 录制按键时优先吃掉输入，不响应热键，也不推批次
-            if (_capturing)
+            if (KeyCapture.IsCapturing)
             {
-                PollCapture();
+                KeyCapture.Poll();
                 return;
             }
 
@@ -183,173 +190,24 @@ namespace QoL
         // 和一键上柜同一套路：游戏对 string 配置只会生成普通输入框，这里补一个
         // Harmony postfix，认出自己那一行后把输入框设成只读、点一下就进捕获。
         // 配置里存的是可读名（「鼠标中键」「F3」），解析走 QuickShelf.ParseKey。
-        // ---------------------------------------------------------------
-
-        private static void PatchSettingsInput()
+        private static void OnKeyCaptured(KeyCode code, TMP_InputField field)
         {
-            try
-            {
-                MethodInfo addInput = AccessTools.Method(typeof(CustomUIBuilder), "AddInput",
-                    new[] { typeof(string), typeof(string), typeof(Action<string>), typeof(string), typeof(Action<string>) });
-                if (addInput == null)
-                {
-                    QLog.Warn("[酿酒] 找不到 CustomUIBuilder.AddInput，设置面板里只能手动填按键名");
-                    return;
-                }
-
-                if (_harmony == null) _harmony = new Harmony(HarmonyId);
-                _harmony.Patch(addInput, postfix: new HarmonyMethod(typeof(Brewing), nameof(AddInputPostfix)));
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[酿酒] 挂设置面板补丁失败：" + e.Message);
-            }
-        }
-
-        private static void UnpatchSettingsInput()
-        {
-            try
-            {
-                if (_harmony != null) _harmony.UnpatchAll(HarmonyId);
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[酿酒] 卸下设置面板补丁失败：" + e.Message);
-            }
-            _harmony = null;
-            _capturing = false;
-            _captureField = null;
-        }
-
-        /// <summary>AddInput 执行完，__instance.Last 是刚造好的那一行；__args[3] 是配置键名。</summary>
-        private static void AddInputPostfix(CustomUIBuilder __instance, object[] __args)
-        {
-            if (__args == null || __args.Length < 4) return;
-            if ((__args[3] as string) != PanelKeyId) return;
-
-            try
-            {
-                CustomUIElement element = __instance != null ? __instance.Last : null;
-                if (element == null || element.input == null) return;
-                AttachCapture(element.input);
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[酿酒] 改造改键框失败：" + e.Message);
-            }
-        }
-
-        private static void AttachCapture(TMP_InputField input)
-        {
-            if (input == null) return;
-
-            // 旧配置里可能是 KeyCode 名或别的写法，统一刷成可读名
-            try
-            {
-                string shown = KeyNameOf(ParseKeyRaw(input.text));
-                if (shown != null && input.text != shown) input.SetTextWithoutNotify(shown);
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[酿酒] 刷新改键框文字失败：" + e);
-            }
-
-            try
-            {
-                input.onSelect.AddListener(delegate { BeginCapture(input); });
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[酿酒] 改键框接管失败，只能手动填键名：" + e);
-                return;
-            }
-
-            try { input.readOnly = true; }
-            catch (Exception e) { QLog.Warn("[酿酒] 设只读失败：" + e); }
-
-            QLog.Info("[酿酒] 设置面板的改键框已接管：点一下就等按键");
-        }
-
-        private static void BeginCapture(TMP_InputField field)
-        {
-            _capturing = true;
-            _captureField = field;
-            _captureFrame = Time.frameCount;
-            Notify("请按下要用的按键（右键或 Esc 取消）");
-        }
-
-        private static void PollCapture()
-        {
-            if (Time.frameCount <= _captureFrame + 1) return;   // 跳过触发捕获的那一下点击
-
-            if (Input.GetKeyDown(KeyCode.Escape) || Input.GetMouseButtonDown(1))
-            {
-                CancelCapture();
-                Notify("已取消");
-                return;
-            }
-
-            // 退格 / 删除 = 关掉这个热键
-            if (Input.GetKeyDown(KeyCode.Backspace) || Input.GetKeyDown(KeyCode.Delete))
-            {
-                BindKey(KeyCode.None);
-                return;
-            }
-
-            if (!Input.anyKeyDown) return;
-
-            // 鼠标键：右键留给「取消」
-            for (int i = 0; i <= 6; i++)
-            {
-                if (i == 1) continue;
-                if (Input.GetMouseButtonDown(i))
-                {
-                    BindKey((KeyCode)((int)KeyCode.Mouse0 + i));
-                    return;
-                }
-            }
-
-            if (_keyList == null) _keyList = (KeyCode[])Enum.GetValues(typeof(KeyCode));
-            for (int k = 0; k < _keyList.Length; k++)
-            {
-                KeyCode code = _keyList[k];
-                if (code >= KeyCode.Mouse0 && code <= KeyCode.Mouse6) continue;
-                if (code == KeyCode.Escape || code == KeyCode.None) continue;
-                if (Input.GetKeyDown(code))
-                {
-                    BindKey(code);
-                    return;
-                }
-            }
-        }
-
-        private static void CancelCapture()
-        {
-            _capturing = false;
-            _captureField = null;
-            ClearSelection();
-        }
-
-        private static void BindKey(KeyCode code)
-        {
-            _capturing = false;
-
             string name = KeyNameOf(code);
 
             QoLSettings s = ModEntry.Settings;
             if (s == null || s.BrewPanelKey == null)
             {
-                _captureField = null;
+                field = null;
                 ClearSelection();
                 return;
             }
 
             s.BrewPanelKey.Set(name);
 
-            if (_captureField != null)
+            if (field != null)
             {
-                _captureField.SetTextWithoutNotify(name);
-                _captureField = null;
+                field.SetTextWithoutNotify(name);
+                field = null;
             }
 
             ClearSelection();
@@ -398,7 +256,7 @@ namespace QoL
             try
             {
                 if (QuickShelf.IsCapturing || QuickToolHotkey.IsCapturing) return true;
-                if (_capturing) return true;
+                if (KeyCapture.IsCapturing) return true;
             }
             catch { }
 

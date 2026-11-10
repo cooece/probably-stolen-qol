@@ -36,22 +36,24 @@ namespace QoL
         private static readonly FieldInfo F_selectedItems =
             AccessTools.Field(typeof(ItemMultiSelectHandler), "selectedItems");
 
-        private static Harmony _harmony;
-
-        private static bool _capturing;
-        private static int _captureFrame = -1;
-        private static TMP_InputField _captureField;
-        private static bool _panelHooked;
+        /// <summary>设置面板里那一行输入框的录制配置（状态机在 KeyCapture 里）。</summary>
+        private static readonly KeyCapture.Binding Capture = new KeyCapture.Binding
+        {
+            KeyId = ShelfKeyId,
+            Tag = "[一键上柜] ",
+            Normalize = Raw => KeyDisplayName(ParseKey(Raw)),
+            NameOf = KeyDisplayName,
+            Bind = OnKeyCaptured,
+            Cancel = ClearSelection,
+            Toast = Notify
+        };
 
         // 按键值缓存：CurrentKey 每帧被问一次，值不变就不重算
         private static string _keyCacheRaw;
         private static KeyCode _keyCacheKey;
         private static bool _keyCacheReady;
 
-        // 捕获时遍历用，只分配一次
-        private static KeyCode[] _keyList;
-
-        internal static bool IsCapturing => _capturing;
+        internal static bool IsCapturing => KeyCapture.IsCapturing;
 
         // ---------------------------------------------------------------
         // 挂载
@@ -61,7 +63,8 @@ namespace QoL
         {
             try
             {
-                PatchSettingsInput();
+                KeyCapture.Add(Capture);
+                KeyCapture.EnsurePatched();
                 QLog.Info("[一键上柜] 已挂载，当前按键 " + KeyDisplayName(CurrentKey));
         
             }
@@ -73,15 +76,7 @@ namespace QoL
 
         internal static void Remove()
         {
-            _capturing = false;
-            _captureField = null;
-
-            if (_harmony != null)
-            {
-                try { _harmony.UnpatchAll(HarmonyId); }
-                catch (Exception e) { QLog.Warn("[一键上柜] 卸下设置面板补丁失败：" + e.Message); }
-                _harmony = null;
-            }
+            KeyCapture.Remove(Capture);
         }
 
         /// <summary>
@@ -91,90 +86,11 @@ namespace QoL
         /// CustomUIBuilder.AddInput 上：等它把这一行造好，再拿 CustomUIElement.input
         /// 把输入框设成只读，并盖一个按钮监听 —— 点一下就进捕获状态。
         /// </summary>
-        private static void PatchSettingsInput()
-        {
-            try
-            {
-                MethodInfo addInput = AccessTools.Method(typeof(CustomUIBuilder), "AddInput",
-                    new[] { typeof(string), typeof(string), typeof(Action<string>), typeof(string), typeof(Action<string>) });
-                if (addInput == null)
-                {
-                    QLog.Warn("[一键上柜] 找不到 CustomUIBuilder.AddInput，设置面板里只能手动填按键名");
-                    return;
-                }
-
-                _harmony = new Harmony(HarmonyId);
-                _harmony.Patch(addInput, postfix: new HarmonyMethod(typeof(QuickShelf), nameof(AddInputPostfix)));
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[一键上柜] 挂设置面板补丁失败：" + e.Message);
-            }
-        }
-
-        /// <summary>
+         /// <summary>
         /// AddInput 执行完，__instance.Last 就是刚造好的那一行控件。
         /// 用 __args 取 id（第 4 个参数），不按参数名绑定，避免游戏改名后补丁静默失效。
         /// </summary>
-        private static void AddInputPostfix(CustomUIBuilder __instance, object[] __args)
-        {
-            if (__args == null || __args.Length < 4) return;
-            if ((__args[3] as string) != ShelfKeyId) return;
-
-            try
-            {
-                CustomUIElement element = __instance != null ? __instance.Last : null;
-                if (element == null || element.input == null) return;
-
-                AttachCapture(element.input);
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[一键上柜] 改造改键框失败：" + e.Message);
-            }
-        }
-
-        private static void AttachCapture(TMP_InputField input)
-        {
-            if (input == null) return;
-
-            // 旧配置里存的是 Mouse2 这种名字，显示成「鼠标中键」。
-            // 每一步单独兜住：哪一步坏了都不会连累后面的，日志里能看出是哪一步。
-            try
-            {
-                string shown = KeyDisplayName(ParseKey(input.text));
-                if (shown != null && input.text != shown) input.SetTextWithoutNotify(shown);
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[一键上柜] 刷新改键框文字失败：" + e);
-            }
-
-            // 用输入框自带的 onSelect：点一下就选中，等于「点了这一格」。
-            // 之前试过在多出来的 Button 上监听，Unity 那边会抛空引用，而且点击命中的
-            // 是整行背景图、不一定传得到子物体上的按钮 —— 这条路更短也更稳。
-            try
-            {
-                input.onSelect.AddListener(delegate { BeginCapture(input); });
-            }
-            catch (Exception e)
-            {
-                QLog.Warn("[一键上柜] 改键框接管失败，只能用右键物品录制：" + e);
-                return;
-            }
-
-            // 放在最后：点击能用了才设只读，否则至少还能手动输入
-            try { input.readOnly = true; }
-            catch (Exception e) { QLog.Warn("[一键上柜] 设只读失败：" + e); }
-
-            if (!_panelHooked)
-            {
-                _panelHooked = true;
-                QLog.Info("[一键上柜] 设置面板的改键框已接管：点一下就等按键");
-            }
-        }
-
-        // ---------------------------------------------------------------
+         // ---------------------------------------------------------------
         // 设置读取
         // ---------------------------------------------------------------
 
@@ -262,15 +178,9 @@ namespace QoL
         {
             try
             {
-                if (_capturing)
+                if (KeyCapture.IsCapturing)
                 {
-                    // 设置面板被关掉时，输入框会先被销毁；这时候别继续等按键
-                    if (_captureField == null)
-                    {
-                        _capturing = false;
-                        return;
-                    }
-                    PollCapture();
+                    KeyCapture.Poll();
                     return;
                 }
 
@@ -441,87 +351,24 @@ namespace QoL
             catch { return "?"; }
         }
 
-        private static void BeginCapture(TMP_InputField field)
+         private static void OnKeyCaptured(KeyCode code, TMP_InputField field)
         {
-            _capturing = true;
-            _captureField = field;
-            _captureFrame = Time.frameCount;
-            Notify("请按下要用的按键（右键或 Esc 取消）");
-        }
-
-        private static void PollCapture()
-        {
-            if (Time.frameCount <= _captureFrame + 1) return; // 跳过触发捕获的那一下点击
-
-            if (Input.GetKeyDown(KeyCode.Escape) || Input.GetMouseButtonDown(1))
-            {
-                CancelCapture();
-                Notify("已取消");
-                return;
-            }
-
-            // Backspace / Delete = 停用，对应设置里显示「关闭」
-            if (Input.GetKeyDown(KeyCode.Backspace) || Input.GetKeyDown(KeyCode.Delete))
-            {
-                Bind(KeyCode.None);
-                return;
-            }
-
-            if (!Input.anyKeyDown) return;
-
-            // 鼠标键：左/中/侧键都能绑，右键留给「取消」
-            for (int i = 0; i <= 6; i++)
-            {
-                if (i == 1) continue;
-                if (Input.GetMouseButtonDown(i))
-                {
-                    Bind((KeyCode)((int)KeyCode.Mouse0 + i));
-                    return;
-                }
-            }
-
-            // 键盘键（KeyCode 列表只取一次，避免每次捕获都分配数组）
-            if (_keyList == null) _keyList = (KeyCode[])Enum.GetValues(typeof(KeyCode));
-            for (int k = 0; k < _keyList.Length; k++)
-            {
-                KeyCode code = _keyList[k];
-                if (code >= KeyCode.Mouse0 && code <= KeyCode.Mouse6) continue;
-                if (code == KeyCode.Escape || code == KeyCode.None) continue;
-                if (Input.GetKeyDown(code))
-                {
-                    Bind(code);
-                    return;
-                }
-            }
-        }
-
-        private static void CancelCapture()
-        {
-            _capturing = false;
-            _captureField = null;
-            ClearSelection();
-        }
-
-        private static void Bind(KeyCode code)
-        {
-            _capturing = false;
-
             string name = KeyDisplayName(code);
 
             QoLSettings s = ModEntry.Settings;
             if (s == null || s.ShelfKey == null)
             {
-                _captureField = null;
+                field = null;
                 return;
             }
 
             s.ShelfKey.Set(name);
 
             // 同步回设置面板那一格，否则点「应用」会把这格里的旧文字又写回去
-            if (_captureField != null)
+            if (field != null)
             {
-                _captureField.SetTextWithoutNotify(name);
-                _captureField = null;
+                field.SetTextWithoutNotify(name);
+                field = null;
             }
 
             ClearSelection();
