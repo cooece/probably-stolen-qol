@@ -19,7 +19,7 @@ namespace QoL
     /// </summary>
     internal static class DesequencerAutoFeed
     {
-        private const string StateTag = "DESEQUENCER_STATE_TAG";
+        internal const string StateTag = "DESEQUENCER_STATE_TAG";
         private const string StateWorking = "STATE_DESEQUENCING";
         private const string BlankCardId = "blank_keycard";
         private const string InputSprite = "blank_card";
@@ -443,7 +443,7 @@ namespace QoL
         // ---------------------------------------------------------------
 
         /// <summary>和游戏自己的 FindAllItem 一致：前厅、后仓、柜台、背包四个窗口全扫。</summary>
-        private static List<GameItem> AllOwnedItems()
+        internal static List<GameItem> AllOwnedItems()
         {
             List<GameItem> list = new List<GameItem>();
 
