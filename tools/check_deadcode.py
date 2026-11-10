@@ -108,6 +108,18 @@ def find_unused_settings(src):
     return unused, len(props)
 
 
+def find_legacy_logging(src):
+    """约定统一走 QLog；这里列出还在用 Debug.Log* 的文件（不是 bug，但属于旧写法）。"""
+    hits = {}
+    for name, text in src.items():
+        if name == "QLog.cs":
+            continue
+        n = len(re.findall(r"Debug\.Log", text))
+        if n:
+            hits[name] = n
+    return hits
+
+
 def main():
     src = load()
     if not src:
@@ -143,7 +155,17 @@ def main():
     if shown == 0:
         print("    无")
 
-    print("\n[3] 设置项是否都有人读")
+    legacy = find_legacy_logging(src)
+    print("\n[3] 日志调用是否统一走 QLog")
+    if legacy:
+        total = sum(legacy.values())
+        print("    %d 处 Debug.Log* 仍在 %d 个文件里（旧写法）" % (total, len(legacy)))
+        for name, n in sorted(legacy.items(), key=lambda kv: -kv[1]):
+            print("      %-28s %d" % (name, n))
+    else:
+        print("    全部走 QLog")
+
+    print("\n[4] 设置项是否都有人读")
     if unused:
         for p in unused:
             print("    未使用：%s" % p)
