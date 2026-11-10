@@ -28,6 +28,10 @@ namespace QoL
         private static readonly FieldInfo F_backgroundImage =
             AccessTools.Field(typeof(GameSlotInventory), "backgroundImage");
 
+        private const float PollInterval = 1.0f;
+
+        private static float _pollTimer;
+        private static bool _dumpedSlots;
         private static bool _warnedSlot;
         private static bool _warnedFlow;
 
@@ -68,6 +72,90 @@ namespace QoL
         // ---------------------------------------------------------------
         // 入口
         // ---------------------------------------------------------------
+
+        /// <summary>
+        /// 常驻检查：成品槽一出现解好的卡就收走，不等睡觉。
+        /// 机器是「成品槽空才能开始下一张」，所以这一步晚一秒，机器就多闲置一秒。
+        /// </summary>
+        internal static void Tick(float dt)
+        {
+            if (!Enabled)
+            {
+                return;
+            }
+
+            _pollTimer += dt;
+            if (_pollTimer < PollInterval)
+            {
+                return;
+            }
+
+            _pollTimer = 0f;
+
+            try
+            {
+                List<GameItem> all = AllOwnedItems();
+                if (all.Count == 0)
+                {
+                    return;
+                }
+
+                for (int i = 0; i < all.Count; i++)
+                {
+                    GameItem item = all[i];
+                    if (item == null || !item.IsTag(StateTag))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        CollectFinished(item, all);
+                    }
+                    catch (Exception e)
+                    {
+                        QLog.Warn("解序器收卡：处理某台机器出错 —— " + e.Message);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("解序器收卡：检查失败 —— " + e.Message);
+            }
+        }
+
+        /// <summary>成品槽有卡就搬进「本来就放着门禁卡」的箱子；没有成品就什么都不做。</summary>
+        private static void CollectFinished(GameItem machine, List<GameItem> all)
+        {
+            List<GameSlotInventory> slots = GraphUtils.FindAllChildrenType<GameSlotInventory>(machine);
+
+            if (!_dumpedSlots)
+            {
+                _dumpedSlots = true;
+                DumpSlots(slots);
+            }
+
+            GameSlotInventory output = FindSlot(slots, OutputSprite);
+
+            if (output == null || output.childItem == null)
+            {
+                return;
+            }
+
+            GameItem finished = output.childItem;
+            if (!MoveToCardContainer(finished, all, machine))
+            {
+                if (!_warnedFlow)
+                {
+                    _warnedFlow = true;
+                    QLog.Warn("解序器收卡：成品卡找不到可放的容器（没有已放门禁卡的箱子？）");
+                }
+
+                return;
+            }
+
+            QLog.Info("解序器收卡：成品「" + Name(finished) + "」已收进箱子");
+        }
 
         private static void OnSleep()
         {
@@ -202,6 +290,51 @@ namespace QoL
         // ---------------------------------------------------------------
         // 槽位识别
         // ---------------------------------------------------------------
+
+        /// <summary>排查用：把解序器各槽的子槽背景贴图名打一条日志，确认识别条件写对了。</summary>
+        private static void DumpSlots(List<GameSlotInventory> slots)
+        {
+            try
+            {
+                if (slots == null)
+                {
+                    QLog.Warn("解序器槽位诊断：一个槽都没找到");
+                    return;
+                }
+
+                string text = "解序器槽位诊断（共 " + slots.Count + " 个）：";
+                for (int i = 0; i < slots.Count; i++)
+                {
+                    string name = "?";
+                    try
+                    {
+                        TreeNodeRender bg = F_backgroundImage != null
+                            ? F_backgroundImage.GetValue(slots[i]) as TreeNodeRender
+                            : null;
+                        if (bg != null && bg.image != null && bg.image.sprite != null)
+                        {
+                            name = bg.image.sprite.name;
+                        }
+                        else
+                        {
+                            name = "(无背景)";
+                        }
+                    }
+                    catch
+                    {
+                        name = "(读取失败)";
+                    }
+
+                    text += " [" + i + "]=" + name;
+                }
+
+                QLog.Info(text);
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("解序器槽位诊断失败：" + e.Message);
+            }
+        }
 
         /// <summary>所有解序器的子槽（输入/成品/芯片/电力），白卡来源要避开它们。</summary>
         private static List<GameInventory> CollectReservedSlots(List<GameItem> all)

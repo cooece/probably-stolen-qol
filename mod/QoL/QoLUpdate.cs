@@ -40,6 +40,7 @@ namespace QoL
             ("全自动换电",     d => AutoBatterySwap.Tick(d)),
             ("自动换滤芯",     d => AutoFilterSwap.Tick(d)),
             ("解序器按钮",     d => DesequencerHeaderButton.Tick(d)),
+            ("解序器收卡",     d => DesequencerAutoFeed.Tick(d)),
             ("酿酒工坊",       d => Brewing.Tick(d)),
             ("汉化调试面板",   d => DebugPanelZh.Tick()),
         };
