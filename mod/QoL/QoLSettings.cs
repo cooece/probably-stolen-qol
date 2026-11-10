@@ -104,6 +104,9 @@ namespace QoL
         /// <summary>全自动换电：一个下拉同时管开关、时机与提前量。</summary>
         internal ConfigEntry<string> AutoBatterySwapMode { get; }
 
+        /// <summary>机器区/暗格多页扩容（默认关闭，有丢物品风险）。</summary>
+        internal ConfigEntry<bool> BayPages { get; }
+
         /// <summary>右键菜单里直接升级物品（有材料就升级/修理/充能）。</summary>
         internal ConfigEntry<bool> UpgradeMenu { get; }
 
@@ -337,6 +340,14 @@ namespace QoL
                 () => "机器没电时自动换上有电的电池，旧电池放回充电器；水瓶打印机这类手动用的，按按钮才装电池、用完自动取回。数字越大换得越早。");
 
             // ---------------- 物品操作 ----------------
+            BayPages = _config.Define(
+                "item.bay_pages",
+                false,
+                "物品操作",
+                () => "机器区/暗格多页扩容（有风险）",
+                () => "给机器区和走私者暗格加标签页（最多 5 页）。注意：游戏存档只保存当前页，所以存档前会自动把 2~5 页的物品收回第 1 页；若关闭本功能或取消订阅，额外页的物品会丢失。默认关闭。");
+
+
             UpgradeMenu = _config.Define(
                 "item.upgrade_menu",
                 true,
