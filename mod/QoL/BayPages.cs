@@ -252,16 +252,15 @@ namespace QoL
             while (bay.Buttons.Count < want)
             {
                 int index = bay.Buttons.Count;
-                bool isBuy = index >= bay.Unlocked;
-                string text = isBuy ? "+1页" : (index + 1).ToString();
                 Bay captured = bay;
                 int capturedIndex = index;
 
-                MachineryButton btn = new MachineryButton(text, delegate
+                // 身份在点击时再判断：买页后同一个按钮要变成“翻到第 N 页”
+                MachineryButton btn = new MachineryButton((index + 1).ToString(), delegate
                 {
-                    if (isBuy) BuyPage(captured);
+                    if (capturedIndex >= captured.Unlocked) BuyPage(captured);
                     else AttachPage(captured, capturedIndex);
-                }, isBuy ? 34 : 16, 16);
+                }, 16, 16);
 
                 try { bay.Window.AddHeaderButton(btn); }
                 catch { return; }
@@ -279,6 +278,7 @@ namespace QoL
                 try
                 {
                     if (i >= bay.Unlocked) bay.Buttons[i].SetText("+1页");
+                    else if (i == bay.Current) bay.Buttons[i].SetText("[" + (i + 1) + "]");
                     else bay.Buttons[i].SetText(i == bay.Current ? "[" + (i + 1) + "]" : (i + 1).ToString());
                 }
                 catch
