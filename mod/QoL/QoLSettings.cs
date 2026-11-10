@@ -104,6 +104,9 @@ namespace QoL
         /// <summary>全自动换电：一个下拉同时管开关、时机与提前量。</summary>
         internal ConfigEntry<string> AutoBatterySwapMode { get; }
 
+        /// <summary>右键菜单里直接升级物品（有材料就升级/修理/充能）。</summary>
+        internal ConfigEntry<bool> UpgradeMenu { get; }
+
         /// <summary>解序器自动续卡：点睡觉时检查解序器，缺白卡就补。</summary>
         internal ConfigEntry<bool> DesequencerAuto { get; }
 
@@ -332,6 +335,14 @@ namespace QoL
                 new[] { AutoBatterySwap.Off, AutoBatterySwap.MorningOnly,
                         AutoBatterySwap.Auto1, AutoBatterySwap.Auto2 },
                 () => "机器没电时自动换上有电的电池，旧电池放回充电器；水瓶打印机这类手动用的，按按钮才装电池、用完自动取回。数字越大换得越早。");
+
+            // ---------------- 物品操作 ----------------
+            UpgradeMenu = _config.Define(
+                "item.upgrade_menu",
+                true,
+                "物品操作",
+                () => "右键升级",
+                () => "可升级的物品（工具箱、鼠笼、鱼缸、冰箱、水族柜、电流转换器、反应堆、售货机等）右键会多出「升级」；有材料就能点，没材料灰着，升满不显示。有对应效果时文字会写成「修理」「充能」。");
 
             // ---------------- 机器 ----------------
             DesequencerAuto = _config.Define(

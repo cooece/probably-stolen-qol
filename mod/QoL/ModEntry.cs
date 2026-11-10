@@ -77,6 +77,7 @@ namespace QoL
             ApplySafe("自动换电", AutoBatterySwap.Apply);
             ApplySafe("自动换滤芯", AutoFilterSwap.Apply);
             ApplySafe("解序器续卡", DesequencerAutoFeed.Apply);
+            ApplySafe("右键升级", UpgradeMenu.Apply);
             ApplySafe("设置页隐藏项", SettingsHideEntry.Apply);
             ApplySafe("酿酒工坊", Brewing.Apply);
 
@@ -97,6 +98,7 @@ namespace QoL
             RemoveSafe("自动换电", AutoBatterySwap.Remove);
             RemoveSafe("自动换滤芯", AutoFilterSwap.Remove);
             RemoveSafe("解序器续卡", DesequencerAutoFeed.Remove);
+            RemoveSafe("右键升级", UpgradeMenu.Remove);
             RemoveSafe("设置页隐藏项", SettingsHideEntry.Remove);
             RemoveSafe("酿酒工坊", Brewing.Remove);
             RemoveSafe("道具快捷键", QuickToolHotkey.Remove);
