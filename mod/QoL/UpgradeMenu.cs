@@ -281,7 +281,16 @@ namespace QoL
                 if (target == null || material == null) return;
                 if (!GeneralHelper.IsItemOwned(target) || !Usable(material)) return;
 
-                // 点下去之前再问一次：期间可能被消耗 / 目标已达上限
+                // 菜单是几秒前弹出的：点下去之前重验一次，别在已经升满/材料已被拿走时白消耗
+                if (material.parentInventory == null) return;
+                if (!May(isKit ? material.mayItemTargetItemFunc : material.mayThisTargetItemFunc, material, target)
+                    && !isKit
+                    && !May(material.canThisTargetItemFunc, material, target))
+                {
+                    QLog.Info("右键升级：条件已变化，这次没有执行");
+                    return;
+                }
+
                 if (isKit)
                 {
                     if (material.onItemTargetItemFunc == null) return;
