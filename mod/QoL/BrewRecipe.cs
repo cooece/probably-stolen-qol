@@ -10,10 +10,8 @@ namespace QoL
     internal static class WineGrade
     {
         internal const string CounterfeitName = "阴光莓果酿";
-        internal const int CounterfeitPrice = 44;
 
-        /// <summary>游戏里 wineScore &gt;= 6 就封顶在同一档，再多分也不会更值钱。</summary>
-        internal const int TopTierScore = 6;
+        // 游戏里 wineScore >= 6 就封顶在同一档，再多分也不会更值钱。
 
         /// <summary>档位：5 琼浆玉液 / 4 臻品窖藏 / 3 量产酒液 / 2 手工自酿 / 1 粗桶劣酿 / 0 难以下咽。</summary>
         internal const int Top = 5;

@@ -119,13 +119,6 @@ namespace QoL
             return n;
         }
 
-        internal int WaterPortions()
-        {
-            int n = 0;
-            for (int i = 0; i < Waters.Count; i++) n += Waters[i].Ml / 749;
-            return n;
-        }
-
         /// <summary>某一档水一共有多少毫升。</summary>
         internal int WaterMl(int tier)
         {
