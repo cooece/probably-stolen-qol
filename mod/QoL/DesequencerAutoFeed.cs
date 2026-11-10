@@ -443,123 +443,19 @@ namespace QoL
         /// </summary>
         private static bool MoveToAnyCardContainer(GameItem card, List<GameItem> all, GameItem machine)
         {
-            if (TryMoveToCandidates(card, all, machine, card.identifier))
-            {
-                return true;
-            }
-
-            if (TryMoveToCandidates(card, all, machine, null))
-            {
-                return true;
-            }
-
             EmporiumEntry entry = EmporiumEntry.Instance;
+
+            // 门禁卡是违禁品：第一顺位放走私暗格（玩家的违禁品本来就都存在那儿）
+            if (entry != null && MoveCard(entry.hiddenElement, card))
+            {
+                return true;
+            }
+
+            // 暗格放不下（满了）：退后仓，再退背包
             if (entry != null)
             {
                 if (MoveCard(entry.backInvinvElement, card)) return true;
                 if (MoveCard(entry.invElement, card)) return true;
-            }
-
-            return false;
-        }
-
-        private static bool TryMoveToCandidates(GameItem card, List<GameItem> all, GameItem machine, string sameId)
-        {
-            for (int i = 0; i < all.Count; i++)
-            {
-                GameItem host = all[i];
-                if (host == null || host == machine || host.IsTag(StateTag))
-                {
-                    continue;
-                }
-
-                List<GameInventory> invs;
-                try
-                {
-                    invs = GraphUtils.FindAllChildrenType<GameInventory>(host);
-                }
-                catch
-                {
-                    continue;
-                }
-
-                if (invs == null)
-                {
-                    continue;
-                }
-
-                for (int j = 0; j < invs.Count; j++)
-                {
-                    GameInventory inv = invs[j];
-                    if (inv == null || !ContainsCard(inv, sameId))
-                    {
-                        continue;
-                    }
-
-                    if (MoveCard(inv, card))
-                    {
-                        return true;
-                    }
-                }
-            }
-
-            return false;
-        }
-
-        private static GameInventory FindCardContainer(List<GameItem> all, GameItem machine, string sameId)
-        {
-            for (int i = 0; i < all.Count; i++)
-            {
-                GameItem host = all[i];
-                if (host == null || host == machine || host.IsTag(StateTag))
-                {
-                    continue;   // 不往别的解序器槽里塞
-                }
-
-                List<GameInventory> invs = GraphUtils.FindAllChildrenType<GameInventory>(host);
-                if (invs == null)
-                {
-                    continue;
-                }
-
-                for (int j = 0; j < invs.Count; j++)
-                {
-                    GameInventory inv = invs[j];
-                    if (inv == null || inv.IsInsertLocked())
-                    {
-                        continue;
-                    }
-
-                    if (ContainsCard(inv, sameId))
-                    {
-                        return inv;
-                    }
-                }
-            }
-
-            return null;
-        }
-
-        private static bool ContainsCard(GameInventory inv, string sameId)
-        {
-            List<GameItem> inside = inv.childItems;
-            if (inside == null)
-            {
-                return false;
-            }
-
-            for (int i = 0; i < inside.Count; i++)
-            {
-                GameItem item = inside[i];
-                if (item == null || !item.IsGameItemType("ACCESS_CARD"))
-                {
-                    continue;
-                }
-
-                if (sameId == null || string.Equals(item.identifier, sameId, StringComparison.Ordinal))
-                {
-                    return true;
-                }
             }
 
             return false;

@@ -77,6 +77,7 @@ namespace QoL
             ApplySafe("自动换电", AutoBatterySwap.Apply);
             ApplySafe("自动换滤芯", AutoFilterSwap.Apply);
             ApplySafe("解序器续卡", DesequencerAutoFeed.Apply);
+            ApplySafe("设置页隐藏项", SettingsHideEntry.Apply);
             ApplySafe("酿酒工坊", Brewing.Apply);
 
             try { ModHook.OnCreateTooltipLate += OnTooltipLate; }
@@ -96,6 +97,7 @@ namespace QoL
             RemoveSafe("自动换电", AutoBatterySwap.Remove);
             RemoveSafe("自动换滤芯", AutoFilterSwap.Remove);
             RemoveSafe("解序器续卡", DesequencerAutoFeed.Remove);
+            RemoveSafe("设置页隐藏项", SettingsHideEntry.Remove);
             RemoveSafe("酿酒工坊", Brewing.Remove);
             RemoveSafe("道具快捷键", QuickToolHotkey.Remove);
             // 右键菜单补丁是 QuickToolHotkey 挂的，但它的 Remove 只撤 provider，补丁要单独撤
