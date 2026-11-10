@@ -60,8 +60,14 @@ namespace QoL
         {
             try
             {
+                // 睡觉「开始」那一刻：趁夜里的周期还没跑，先把白卡补上，今晚才能推进
                 ModHook.OnGoingSleepEarly += OnSleep;
-                QLog.Info("解序器自动续卡已挂载（点睡觉时检查）");
+
+                // 睡觉「结束」那一刻（EndNight 最后一步，已经是第二天开始）：
+                // 夜里的周期跑完了，可能刚解完一张，这时收成品、再补下一张
+                ModHook.OnGoingSleepLate += OnSleep;
+
+                QLog.Info("解序器自动续卡已挂载（睡觉开始 + 第二天开始 + 随时轮询）");
             }
             catch (Exception e)
             {
@@ -74,6 +80,7 @@ namespace QoL
             try
             {
                 ModHook.OnGoingSleepEarly -= OnSleep;
+                ModHook.OnGoingSleepLate -= OnSleep;
             }
             catch
             {
