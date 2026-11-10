@@ -67,7 +67,7 @@ namespace QoL
                 if (!_loggedError)
                 {
                     _loggedError = true;
-                    Debug.LogWarning(ModEntry.Tag + "估价自动鉴定出错：" + e);
+                    QLog.Warn("估价自动鉴定出错：" + e);
                 }
             }
         }
@@ -172,7 +172,7 @@ namespace QoL
             if (queued > 0)
             {
                 _submitting = true;
-                Debug.Log(ModEntry.Tag + "自动开始批量估价：" + queued + " 件，按 105% 完美报价");
+                QLog.Info("自动开始批量估价：" + queued + " 件，按 105% 完美报价");
             }
         }
 

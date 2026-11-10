@@ -94,12 +94,12 @@ namespace QoL
                 // 清掉旧贴图缓存，确保绘制逻辑改动后（如框线粗细、违禁品样式）立即生效
                 DemandSprites.Clear();
 
-                Debug.Log(ModEntry.Tag + "需求高亮已挂载");
+                QLog.Info("需求高亮已挂载");
             }
             catch (Exception e)
             {
                 TearDown();
-                Debug.LogWarning(ModEntry.Tag + "需求高亮启动失败：" + e.Message);
+                QLog.Warn("需求高亮启动失败：" + e.Message);
             }
         }
 
@@ -355,7 +355,7 @@ namespace QoL
                 if (!_warned)
                 {
                     _warned = true;
-                    Debug.LogWarning(ModEntry.Tag + "需求高亮刷新失败：" + e);
+                    QLog.Warn("需求高亮刷新失败：" + e);
                 }
             }
         }

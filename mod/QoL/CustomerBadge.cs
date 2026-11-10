@@ -73,7 +73,7 @@ namespace QoL
                 if (!_loggedError)
                 {
                     _loggedError = true;
-                    Debug.LogWarning(ModEntry.Tag + "顾客提示牌异常：" + e);
+                    QLog.Warn("顾客提示牌异常：" + e);
                 }
             }
         }
@@ -106,7 +106,7 @@ namespace QoL
                 }
                 catch (Exception e)
                 {
-                    Debug.LogWarning(ModEntry.Tag + "顾客提示文字设置失败：" + e.Message);
+                    QLog.Warn("顾客提示文字设置失败：" + e.Message);
                     return;
                 }
 
@@ -229,7 +229,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogError(ModEntry.Tag + "顾客提示牌创建失败：" + e);
+                QLog.Error("顾客提示牌创建失败：" + e);
                 _root = null;
                 _rect = null;
                 _text = null;
@@ -333,7 +333,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "顾客提示牌定位失败：" + e.Message);
+                QLog.Warn("顾客提示牌定位失败：" + e.Message);
             }
         }
     }

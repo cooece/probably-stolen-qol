@@ -103,7 +103,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "真伪鉴定提示出错：" + e.Message);
+                QLog.Warn("真伪鉴定提示出错：" + e.Message);
             }
         }
 
@@ -135,7 +135,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "估价物品正确价值出错：" + e.Message);
+                QLog.Warn("估价物品正确价值出错：" + e.Message);
             }
         }
 
@@ -358,7 +358,7 @@ namespace QoL
                 if (!_loggedValueMismatch)
                 {
                     _loggedValueMismatch = true;
-                    Debug.LogWarning(ModEntry.Tag + "真实价值自校验失败：differs=" + differs +
+                    QLog.Warn("真实价值自校验失败：differs=" + differs +
                         " base=" + baseValue + " innateShown=" + innateShown +
                         " marketShown=" + marketShown + " finalShown=" + finalShown.ToString("0.00") +
                         " late=" + late + " scaled=" + marketScaled +
@@ -473,7 +473,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "自动鉴定出错：" + e.Message);
+                QLog.Warn("自动鉴定出错：" + e.Message);
             }
         }
 
@@ -578,7 +578,7 @@ namespace QoL
                     manager.RefreshUI();
                 }
 
-                Debug.Log(ModEntry.Tag + "自动鉴定：揭穿 " + exposed + " 处");
+                QLog.Info("自动鉴定：揭穿 " + exposed + " 处");
             }
         }
     }

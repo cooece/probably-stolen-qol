@@ -58,11 +58,11 @@ namespace QoL
                     ui.SetTypewriterSpeed();
                 }
 
-                Debug.Log(ModEntry.Tag + "全局对话加速已挂载");
+                QLog.Info("全局对话加速已挂载");
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "全局对话加速挂载失败：" + e.Message);
+                QLog.Warn("全局对话加速挂载失败：" + e.Message);
             }
         }
 

@@ -35,7 +35,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogError(Tag + "Init 失败：" + e);
+                QLog.Error(Tag + "Init 失败：" + e);
             }
         }
 
@@ -163,7 +163,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(Tag + "真伪鉴定提示出错：" + e.Message);
+                QLog.Warn(Tag + "真伪鉴定提示出错：" + e.Message);
             }
         }
     }

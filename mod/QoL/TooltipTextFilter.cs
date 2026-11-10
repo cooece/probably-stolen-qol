@@ -49,7 +49,7 @@ namespace QoL
                 }
                 else
                 {
-                    Debug.LogWarning(ModEntry.Tag + "找不到 GameItemElement.GetTooltipBasic，描述隐藏不会生效");
+                    QLog.Warn("找不到 GameItemElement.GetTooltipBasic，描述隐藏不会生效");
                 }
 
                 // 2) 区间内把描述文本变成空串
@@ -77,14 +77,14 @@ namespace QoL
                 }
                 else
                 {
-                    Debug.LogWarning(ModEntry.Tag + "找不到 GameItem.DisplayManufacturer，厂商行隐藏不会生效");
+                    QLog.Warn("找不到 GameItem.DisplayManufacturer，厂商行隐藏不会生效");
                 }
 
-                Debug.Log(ModEntry.Tag + "提示框文字过滤已挂载");
+                QLog.Info("提示框文字过滤已挂载");
             }
             catch (Exception e)
             {
-                Debug.LogError(ModEntry.Tag + "提示框文字过滤挂载失败：" + e);
+                QLog.Error("提示框文字过滤挂载失败：" + e);
             }
         }
 
@@ -108,7 +108,7 @@ namespace QoL
             var getter = AccessTools.Method(typeof(GameItem), name);
             if (getter == null)
             {
-                Debug.LogWarning(ModEntry.Tag + "找不到 GameItem." + name + " 的 getter");
+                QLog.Warn("找不到 GameItem." + name + " 的 getter");
                 return;
             }
 

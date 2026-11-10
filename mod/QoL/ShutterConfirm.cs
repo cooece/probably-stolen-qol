@@ -52,7 +52,7 @@ namespace QoL
                 var closeShutter = AccessTools.Method(typeof(StoreShutterButton), "CloseShutter", Type.EmptyTypes);
                 if (closeShutter == null)
                 {
-                    Debug.LogWarning(ModEntry.Tag + "找不到 StoreShutterButton.CloseShutter，打烊确认不会生效");
+                    QLog.Warn("找不到 StoreShutterButton.CloseShutter，打烊确认不会生效");
                     _harmony = null;
                     return;
                 }
@@ -60,11 +60,11 @@ namespace QoL
                 _harmony.Patch(closeShutter,
                     prefix: new HarmonyMethod(typeof(ShutterConfirm), nameof(CloseShutterPrefix)));
 
-                Debug.Log(ModEntry.Tag + "打烊确认已挂载");
+                QLog.Info("打烊确认已挂载");
             }
             catch (Exception e)
             {
-                Debug.LogError(ModEntry.Tag + "挂载打烊确认失败：" + e);
+                QLog.Error("挂载打烊确认失败：" + e);
                 _harmony = null;
             }
         }
@@ -158,7 +158,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "打烊确认判断出错，按原版关店：" + e.Message);
+                QLog.Warn("打烊确认判断出错，按原版关店：" + e.Message);
                 return true;
             }
         }
@@ -172,7 +172,7 @@ namespace QoL
             if (panel == null)
             {
                 // 这个场景没有通用确认框，退回原版那块打烊面板，至少不让玩家点不动
-                Debug.LogWarning(ModEntry.Tag + "当前场景没有 GenericConfirmationUIManager，改用原版打烊面板");
+                QLog.Warn("当前场景没有 GenericConfirmationUIManager，改用原版打烊面板");
                 button.ShowConfirmCloseUI();
                 return;
             }
@@ -198,27 +198,27 @@ namespace QoL
                         if (store == null) return;
                         if (store.storeState != PlayerStore.StoreState.OPEN)
                         {
-                            Debug.Log(ModEntry.Tag + "打烊确认：店铺已不在营业状态，忽略");
+                            QLog.Info("打烊确认：店铺已不在营业状态，忽略");
                             return;
                         }
 
                         // 原版面板上「是」走的就是这个方法：关店 + 请走顾客 + 结算当天
                         button.EndAndClose();
-                        Debug.Log(ModEntry.Tag + "打烊确认：是，关闭店铺");
+                        QLog.Info("打烊确认：是，关闭店铺");
                     },
                     delegate
                     {
                         _dialogOpen = false;
                         panel.ClosePanel();
-                        Debug.Log(ModEntry.Tag + "打烊确认：否，继续营业");
+                        QLog.Info("打烊确认：否，继续营业");
                     });
 
-                Debug.Log(ModEntry.Tag + "弹出打烊确认");
+                QLog.Info("弹出打烊确认");
             }
             catch (Exception e)
             {
                 _dialogOpen = false;
-                Debug.LogWarning(ModEntry.Tag + "弹打烊确认失败，退回原版确认面板：" + e.Message);
+                QLog.Warn("弹打烊确认失败，退回原版确认面板：" + e.Message);
 
                 // 不能在这里直接关店：玩家根本没点过「是」。
                 // 退回原版面板，让玩家自己确认。
@@ -228,7 +228,7 @@ namespace QoL
                 }
                 catch (Exception inner)
                 {
-                    Debug.LogWarning(ModEntry.Tag + "退回原版打烊面板也失败：" + inner.Message);
+                    QLog.Warn("退回原版打烊面板也失败：" + inner.Message);
                 }
             }
         }

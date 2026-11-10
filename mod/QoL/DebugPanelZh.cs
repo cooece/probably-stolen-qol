@@ -282,11 +282,11 @@ namespace QoL
                 // 按钮旁 ⓘ 徽标的悬停说明走 WithTooltip，不经过 AddButton 的 text
                 Patch(typeof(CustomUIBuilder), "WithTooltip", nameof(TooltipPrefix));
 
-                Debug.Log(ModEntry.Tag + "调试面板汉化已挂载");
+                QLog.Info("调试面板汉化已挂载");
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "调试面板汉化挂载失败：" + e);
+                QLog.Warn("调试面板汉化挂载失败：" + e);
             }
         }
 
@@ -308,7 +308,7 @@ namespace QoL
             }
             else
             {
-                Debug.LogWarning(ModEntry.Tag + "汉化：找不到 " + type.Name + "." + name);
+                QLog.Warn("汉化：找不到 " + type.Name + "." + name);
             }
         }
 
@@ -375,7 +375,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "调试面板快捷键出错：" + e.Message);
+                QLog.Warn("调试面板快捷键出错：" + e.Message);
             }
         }
 

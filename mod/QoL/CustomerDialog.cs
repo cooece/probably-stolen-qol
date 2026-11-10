@@ -77,18 +77,18 @@ namespace QoL
                     new[] { typeof(string) });
                 if (update == null)
                 {
-                    Debug.LogWarning(ModEntry.Tag + "找不到 DialogUIManager.UpdateDialogHistory，顾客对话记录不会生效");
+                    QLog.Warn("找不到 DialogUIManager.UpdateDialogHistory，顾客对话记录不会生效");
                 }
                 else
                 {
                     _harmony.Patch(update,
                         postfix: new HarmonyMethod(typeof(CustomerDialog), nameof(AfterDialogLine)));
-                    Debug.Log(ModEntry.Tag + "顾客对话记录已挂载");
+                    QLog.Info("顾客对话记录已挂载");
                 }
             }
             catch (Exception e)
             {
-                Debug.LogError(ModEntry.Tag + "顾客对话记录挂载失败：" + e);
+                QLog.Error("顾客对话记录挂载失败：" + e);
             }
         }
 
@@ -161,7 +161,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "记录顾客对话出错：" + e.Message);
+                QLog.Warn("记录顾客对话出错：" + e.Message);
             }
         }
 
@@ -221,7 +221,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "顾客对话轮询出错：" + e.Message);
+                QLog.Warn("顾客对话轮询出错：" + e.Message);
             }
         }
 
@@ -400,7 +400,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "显示顾客对话出错：" + e.Message);
+                QLog.Warn("显示顾客对话出错：" + e.Message);
             }
         }
 

@@ -110,7 +110,7 @@ namespace QoL
                 }
                 else
                 {
-                    Debug.LogWarning(ModEntry.Tag + "找不到 CommonTooltipHelper.CreateItemTypeTooltip，分类标签不会生效");
+                    QLog.Warn("找不到 CommonTooltipHelper.CreateItemTypeTooltip，分类标签不会生效");
                 }
 
                 // 2) 提示框显示后摆放标签（两个重载都要挂）
@@ -136,11 +136,11 @@ namespace QoL
                         postfix: new HarmonyMethod(typeof(ItemTypeBadge), nameof(HideTooltipPostfix)));
                 }
 
-                Debug.Log(ModEntry.Tag + "分类标签已挂载");
+                QLog.Info("分类标签已挂载");
             }
             catch (Exception e)
             {
-                Debug.LogError(ModEntry.Tag + "分类标签挂载失败：" + e);
+                QLog.Error("分类标签挂载失败：" + e);
             }
         }
 
@@ -228,7 +228,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "读取物品分类出错：" + e.Message);
+                QLog.Warn("读取物品分类出错：" + e.Message);
                 return true;
             }
         }
@@ -276,7 +276,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "显示分类标签出错：" + e.Message);
+                QLog.Warn("显示分类标签出错：" + e.Message);
                 Hide();
             }
         }

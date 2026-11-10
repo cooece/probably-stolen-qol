@@ -65,7 +65,7 @@ namespace QoL
                 if (!_loggedStack)
                 {
                     _loggedStack = true;
-                    Debug.LogWarning(ModEntry.Tag + "顾客到店提示出错：" + e);
+                    QLog.Warn("顾客到店提示出错：" + e);
                 }
             }
         }

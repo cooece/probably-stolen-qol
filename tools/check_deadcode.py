@@ -114,7 +114,7 @@ def find_legacy_logging(src):
     for name, text in src.items():
         if name == "QLog.cs":
             continue
-        n = len(re.findall(r"Debug\.Log", text))
+        n = len(re.findall(r"Debug\.Log[A-Za-z]*\s*\(", text))
         if n:
             hits[name] = n
     return hits
@@ -158,8 +158,8 @@ def main():
     legacy = find_legacy_logging(src)
     print("\n[3] 日志调用是否统一走 QLog")
     if legacy:
-        total = sum(legacy.values())
-        print("    %d 处 Debug.Log* 仍在 %d 个文件里（旧写法）" % (total, len(legacy)))
+        legacyTotal = sum(legacy.values())
+        print("    %d 处 Debug.Log* 仍在 %d 个文件里（旧写法）" % (legacyTotal, len(legacy)))
         for name, n in sorted(legacy.items(), key=lambda kv: -kv[1]):
             print("      %-28s %d" % (name, n))
     else:

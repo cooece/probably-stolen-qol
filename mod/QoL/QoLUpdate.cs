@@ -58,7 +58,7 @@ namespace QoL
             GameObject go = new GameObject("QoL_Update");
             UnityEngine.Object.DontDestroyOnLoad(go);
             _instance = go.AddComponent<QoLUpdate>();
-            Debug.Log(ModEntry.Tag + "每帧驱动已启动");
+            QLog.Info("每帧驱动已启动");
         }
 
         internal static void Shutdown()

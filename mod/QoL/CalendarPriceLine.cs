@@ -80,7 +80,7 @@ namespace QoL
                 var update = AccessTools.Method(typeof(StoreCalendar), "Update", Type.EmptyTypes);
                 if (update == null)
                 {
-                    Debug.LogWarning(ModEntry.Tag + "找不到 StoreCalendar.Update，日历行情不会显示");
+                    QLog.Warn("找不到 StoreCalendar.Update，日历行情不会显示");
                     _harmony = null;
                     return;
                 }
@@ -88,11 +88,11 @@ namespace QoL
                 _harmony.Patch(update,
                     postfix: new HarmonyMethod(typeof(CalendarPriceLine), nameof(UpdatePostfix)));
 
-                Debug.Log(ModEntry.Tag + "日历行情已挂载");
+                QLog.Info("日历行情已挂载");
             }
             catch (Exception e)
             {
-                Debug.LogError(ModEntry.Tag + "挂载日历行情失败：" + e);
+                QLog.Error("挂载日历行情失败：" + e);
                 _harmony = null;
             }
         }
@@ -219,7 +219,7 @@ namespace QoL
                 if (!_loggedError)
                 {
                     _loggedError = true;
-                    Debug.LogWarning(ModEntry.Tag + "日历行情出错：" + e);
+                    QLog.Warn("日历行情出错：" + e);
                 }
             }
         }

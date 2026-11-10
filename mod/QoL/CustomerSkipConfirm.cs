@@ -50,7 +50,7 @@ namespace QoL
                 var ringBell = AccessTools.Method(typeof(StoreBell), "RingBell", Type.EmptyTypes);
                 if (ringBell == null)
                 {
-                    Debug.LogWarning(ModEntry.Tag + "找不到 StoreBell.RingBell，跳过确认不会生效");
+                    QLog.Warn("找不到 StoreBell.RingBell，跳过确认不会生效");
                     _harmony = null;
                     return;
                 }
@@ -58,11 +58,11 @@ namespace QoL
                 _harmony.Patch(ringBell,
                     prefix: new HarmonyMethod(typeof(CustomerSkipConfirm), nameof(RingBellPrefix)));
 
-                Debug.Log(ModEntry.Tag + "未击杀改造体确认框已挂载");
+                QLog.Info("未击杀改造体确认框已挂载");
             }
             catch (Exception e)
             {
-                Debug.LogError(ModEntry.Tag + "挂载跳过确认失败：" + e);
+                QLog.Error("挂载跳过确认失败：" + e);
                 _harmony = null;
             }
         }
@@ -128,7 +128,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "跳过确认判断出错，放行原版摇铃：" + e.Message);
+                QLog.Warn("跳过确认判断出错，放行原版摇铃：" + e.Message);
                 return true;
             }
         }
@@ -165,7 +165,7 @@ namespace QoL
                 if (!_warnedNoPanel)
                 {
                     _warnedNoPanel = true;
-                    Debug.LogWarning(ModEntry.Tag + "当前场景没有 GenericConfirmationUIManager，跳过确认暂时不生效");
+                    QLog.Warn("当前场景没有 GenericConfirmationUIManager，跳过确认暂时不生效");
                 }
 
                 return false;
@@ -238,7 +238,7 @@ namespace QoL
             GenericConfirmationUIManager panel = GenericConfirmationUIManager.Instance;
             if (panel == null)
             {
-                Debug.LogWarning(ModEntry.Tag + "场景里没有确认面板，这次不拦摇铃");
+                QLog.Warn("场景里没有确认面板，这次不拦摇铃");
                 return false;
             }
 
@@ -262,13 +262,13 @@ namespace QoL
                         panel.ClosePanel();
                     });
 
-                Debug.Log(ModEntry.Tag + "弹出未击杀改造体确认框");
+                QLog.Info("弹出未击杀改造体确认框");
                 return true;
             }
             catch (Exception e)
             {
                 _dialogOpen = false;
-                Debug.LogWarning(ModEntry.Tag + "弹确认框失败：" + e.Message);
+                QLog.Warn("弹确认框失败：" + e.Message);
                 return false;
             }
         }
@@ -294,7 +294,7 @@ namespace QoL
                 // 不校验就打「已跳过」，会让玩家以为送走了，实际上人还站着。
                 if (store.currentClientInstance != null)
                 {
-                    Debug.Log(ModEntry.Tag + "顾客拒绝了驱赶（tryInterceptDismiss）");
+                    QLog.Info("顾客拒绝了驱赶（tryInterceptDismiss）");
                     try
                     {
                         ReputationUIManager ui = ReputationUIManager.Instance;
@@ -307,11 +307,11 @@ namespace QoL
                     return;
                 }
 
-                Debug.Log(ModEntry.Tag + "已跳过未击杀的改造体");
+                QLog.Info("已跳过未击杀的改造体");
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "跳过顾客失败：" + e.Message);
+                QLog.Warn("跳过顾客失败：" + e.Message);
             }
         }
 

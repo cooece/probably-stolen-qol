@@ -76,7 +76,7 @@ namespace QoL
                     System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
                 if (method == null)
                 {
-                    Debug.LogWarning(ModEntry.Tag + "交易结果弹窗：找不到 OnItemTraded");
+                    QLog.Warn("交易结果弹窗：找不到 OnItemTraded");
                     return;
                 }
 
@@ -86,7 +86,7 @@ namespace QoL
                 var tradeParams = method.GetParameters();
                 if (tradeParams.Length < 3 || tradeParams[2].Name != "originalValue")
                 {
-                    Debug.LogWarning(ModEntry.Tag + "交易结果弹窗：OnItemTraded 参数签名变了，金额可能不准，请检查");
+                    QLog.Warn("交易结果弹窗：OnItemTraded 参数签名变了，金额可能不准，请检查");
                 }
 
                 _harmony.Patch(method,
@@ -124,7 +124,7 @@ namespace QoL
                         prefix: new HarmonyMethod(typeof(TradeResultPopup), nameof(CashPrefix)));
                 }
 
-                Debug.Log(ModEntry.Tag + "交易结果弹窗已挂载");
+                QLog.Info("交易结果弹窗已挂载");
         
             }
             catch (Exception e)
@@ -295,7 +295,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "交易结果弹窗出错：" + e.Message);
+                QLog.Warn("交易结果弹窗出错：" + e.Message);
             }
         }
 
@@ -386,7 +386,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "估价结算弹窗出错：" + e.Message);
+                QLog.Warn("估价结算弹窗出错：" + e.Message);
             }
         }
 
@@ -454,7 +454,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "声望弹窗出错：" + e.Message);
+                QLog.Warn("声望弹窗出错：" + e.Message);
             }
         }
 
@@ -479,7 +479,7 @@ namespace QoL
             }
             catch (Exception e)
             {
-                Debug.LogWarning(ModEntry.Tag + "现金弹窗出错：" + e.Message);
+                QLog.Warn("现金弹窗出错：" + e.Message);
             }
         }
     }

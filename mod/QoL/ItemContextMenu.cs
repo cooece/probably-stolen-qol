@@ -115,7 +115,7 @@ namespace QoL
             }
             catch (Exception ex)
             {
-                Debug.LogWarning(ModEntry.Tag + "安装右键菜单扩展失败：" + ex.Message);
+                QLog.Warn("安装右键菜单扩展失败：" + ex.Message);
             }
         }
 
@@ -130,7 +130,7 @@ namespace QoL
             }
             catch (Exception ex)
             {
-                Debug.LogWarning(ModEntry.Tag + "卸载右键菜单扩展失败：" + ex.Message);
+                QLog.Warn("卸载右键菜单扩展失败：" + ex.Message);
             }
         }
 
@@ -264,7 +264,7 @@ namespace QoL
                     }
                     catch (Exception pex)
                     {
-                        Debug.LogWarning(ModEntry.Tag + "右键菜单 provider 异常：" + pex.Message);
+                        QLog.Warn("右键菜单 provider 异常：" + pex.Message);
                     }
                 }
 
@@ -286,7 +286,7 @@ namespace QoL
             }
             catch (Exception ex)
             {
-                Debug.LogWarning(ModEntry.Tag + "准备右键菜单项异常：" + ex.Message);
+                QLog.Warn("准备右键菜单项异常：" + ex.Message);
             }
         }
 
