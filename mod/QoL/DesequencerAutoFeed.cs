@@ -33,6 +33,18 @@ namespace QoL
         private static float _pollTimer;
         private static bool _dumpedSlots;
         private static bool _warnedSlot;
+        private static readonly HashSet<string> MoveDiag = new HashSet<string>();
+
+        /// <summary>搬运失败原因，每类只记一条。</summary>
+        private static void DiagMove(string reason)
+        {
+            if (MoveDiag.Count > 20 || !MoveDiag.Add(reason))
+            {
+                return;
+            }
+
+            QLog.Warn("解序器搬运：" + reason);
+        }
         private static bool _warnedFlow;
 
         internal static bool Enabled
@@ -143,12 +155,12 @@ namespace QoL
             }
 
             GameItem finished = output.childItem;
-            if (!MoveToCardContainer(finished, all, machine))
+            if (!MoveToAnyCardContainer(finished, all, machine))
             {
                 if (!_warnedFlow)
                 {
                     _warnedFlow = true;
-                    QLog.Warn("解序器收卡：成品卡找不到可放的容器（没有已放门禁卡的箱子？）");
+                    QLog.Warn("解序器收卡：成品卡搬不出去（目标容器不存在或放不进），先把卡留在输出槽");
                 }
 
                 return;
@@ -243,7 +255,7 @@ namespace QoL
             if (output.childItem != null)
             {
                 GameItem finished = output.childItem;
-                if (!MoveToCardContainer(finished, all, machine))
+                if (!MoveToAnyCardContainer(finished, all, machine))
                 {
                     if (!_warnedFlow)
                     {
@@ -271,19 +283,19 @@ namespace QoL
                 return;
             }
 
-            if (!TryMoveInto(input, blank))
+            if (!MoveCard(input, blank))
             {
                 QLog.Warn("解序器续卡：白卡放不进输入槽（可能被锁或槽位不认）");
                 return;
             }
 
-            if (input.childItem == null)
+            if (ReferenceEquals(input.childItem, blank))
             {
-                QLog.Warn("解序器续卡：白卡已移动但输入槽仍为空，请检查");
+                QLog.Info("解序器续卡：已补上一张白卡");
             }
             else
             {
-                QLog.Info("解序器续卡：已补上一张白卡");
+                QLog.Warn("解序器续卡：白卡移动后输入槽里不是它，请检查");
             }
         }
 
@@ -418,26 +430,70 @@ namespace QoL
         // 成品卡：放进本来就装着门禁卡的容器
         // ---------------------------------------------------------------
 
-        private static bool MoveToCardContainer(GameItem card, List<GameItem> all, GameItem machine)
+        /// <summary>
+        /// 成品卡去处：先试「装着同一种卡」的容器（可能有多个，第一个满了就换下一个），
+        /// 再试「任何装着门禁卡」的容器，最后退后仓、背包。每个都真的验证过才继续。
+        /// </summary>
+        private static bool MoveToAnyCardContainer(GameItem card, List<GameItem> all, GameItem machine)
         {
-            // 先找装着「同一种卡」的容器，再退到任何装着门禁卡的容器
-            GameInventory target = FindCardContainer(all, machine, card.identifier);
-            if (target == null)
-            {
-                target = FindCardContainer(all, machine, null);
-            }
-
-            if (target != null && TryMoveInto(target, card))
+            if (TryMoveToCandidates(card, all, machine, card.identifier))
             {
                 return true;
             }
 
-            // 没有已放门禁卡的箱子时，退到后仓、再退背包——总比让机器卡死强
+            if (TryMoveToCandidates(card, all, machine, null))
+            {
+                return true;
+            }
+
             EmporiumEntry entry = EmporiumEntry.Instance;
             if (entry != null)
             {
-                if (TryMoveInto(entry.backInvinvElement, card)) return true;
-                if (TryMoveInto(entry.invElement, card)) return true;
+                if (MoveCard(entry.backInvinvElement, card)) return true;
+                if (MoveCard(entry.invElement, card)) return true;
+            }
+
+            return false;
+        }
+
+        private static bool TryMoveToCandidates(GameItem card, List<GameItem> all, GameItem machine, string sameId)
+        {
+            for (int i = 0; i < all.Count; i++)
+            {
+                GameItem host = all[i];
+                if (host == null || host == machine || host.IsTag(StateTag))
+                {
+                    continue;
+                }
+
+                List<GameInventory> invs;
+                try
+                {
+                    invs = GraphUtils.FindAllChildrenType<GameInventory>(host);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (invs == null)
+                {
+                    continue;
+                }
+
+                for (int j = 0; j < invs.Count; j++)
+                {
+                    GameInventory inv = invs[j];
+                    if (inv == null || !ContainsCard(inv, sameId))
+                    {
+                        continue;
+                    }
+
+                    if (MoveCard(inv, card))
+                    {
+                        return true;
+                    }
+                }
             }
 
             return false;
@@ -612,6 +668,88 @@ namespace QoL
             {
                 // 某个窗口还没准备好就跳过
             }
+        }
+
+        /// <summary>
+        /// 真正把物品搬到另一个容器：先从容器的原处移出，再放进目标，最后**用父容器验证**。
+        /// 只靠 TryAcceptOnce 的返回值会骗人（实测返回 1 但物品没动，日志一秒一条刷屏）。
+        /// 放不进去就退回原容器，绝不让物品消失。
+        /// </summary>
+        private static bool MoveCard(GameInventory target, GameItem item)
+        {
+            if (target == null || item == null)
+            {
+                return false;
+            }
+
+            GameInventory source = item.parentInventory;
+            if (source == null || ReferenceEquals(source, target))
+            {
+                return false;
+            }
+
+            SlotMarker marker;
+            try
+            {
+                if (target.IsInsertLocked())
+                {
+                    DiagMove("目标容器禁止插入：" + target.GetType().Name);
+                    return false;
+                }
+
+                marker = target.TryFindOneValidInventorySlot(item);
+                if (marker == null)
+                {
+                    DiagMove("目标容器找不到能放它的格子（可能是满了）：" + target.GetType().Name);
+                    return false;
+                }
+
+                if (marker.numTransfer < 1)
+                {
+                    DiagMove("目标格子 numTransfer=" + marker.numTransfer);
+                    return false;
+                }
+            }
+            catch (Exception e)
+            {
+                DiagMove("查格子时抛异常：" + e.Message);
+                return false;
+            }
+
+            try
+            {
+                if (!source.Expel(item))
+                {
+                    DiagMove("从原容器移出失败（Expel=false），原容器=" + source.GetType().Name);
+                    return false;
+                }
+            }
+            catch (Exception e)
+            {
+                DiagMove("移出时抛异常：" + e.Message);
+                return false;
+            }
+
+            try
+            {
+                marker.TryAcceptOnce(1);
+            }
+            catch
+            {
+                // 下面用父容器验证结果
+            }
+
+            if (ReferenceEquals(item.parentInventory, target))
+            {
+                return true;
+            }
+
+            DiagMove("放进目标后父容器仍不是目标（实际=" +
+                (item.parentInventory == null ? "null" : item.parentInventory.GetType().Name) + "）");
+
+            // 没放进去：退回原容器，别把卡弄丢
+            TryMoveInto(source, item);
+            return false;
         }
 
         private static bool TryMoveInto(GameInventory target, GameItem item)
