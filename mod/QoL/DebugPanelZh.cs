@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using System.Reflection;
 using HarmonyLib;
 using UnityEngine;
 
@@ -301,7 +302,7 @@ namespace QoL
 
         private static void Patch(Type type, string name, string prefix)
         {
-            var method = AccessTools.Method(type, name);
+            MethodBase method = ReflectSafe.Target(type, name);
             if (method != null)
             {
                 _harmony.Patch(method, prefix: new HarmonyMethod(typeof(DebugPanelZh), prefix));

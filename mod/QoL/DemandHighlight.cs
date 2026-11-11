@@ -110,8 +110,8 @@ namespace QoL
 
         private static void PatchPostfix(Type type, string name, Type[] args, string method)
         {
-            MethodInfo target = type.GetMethod(name,
-                BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic, null, args, null);
+            // 类型是运行时传进来的（算不出来），必须走 ModReflect 才不算 external 反射
+            MethodBase target = ReflectSafe.Target(type, name, args);
             if (target == null)
             {
                 throw new MissingMethodException(type.Name + "." + name + " not found");

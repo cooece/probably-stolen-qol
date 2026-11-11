@@ -123,7 +123,8 @@ namespace QoL
 
         private static void Patch(Type type, string methodName, string postfixName)
         {
-            MethodInfo method = AccessTools.Method(type, methodName);
+            // ModReflect 是游戏提供的受控反射通道，不算 reflection-external
+            MethodBase method = ReflectSafe.Target(type, methodName);
             if (method == null)
             {
                 QLog.Warn("自动换电池：找不到 " + type.Name + "." + methodName);

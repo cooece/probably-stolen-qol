@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Runtime.CompilerServices;
+using System.Reflection;
 using HarmonyLib;
 using TMPro;
 using UnityEngine;
@@ -46,6 +47,19 @@ namespace QoL
         private const string JiaYiChoice = QoLSettings.BadgeModeJiaYi;      // 甲 乙 丙 丁
         private const string GradeWordChoice = QoLSettings.BadgeModeGrade;   // 优 良 中 差
         private const string AbcdChoice = QoLSettings.BadgeModeAbcd;         // A B C D
+
+        /// <summary>ModReflect.FindType 找不到会抛异常，这里统一转成 null。</summary>
+        private static Type FindTypeSafe(string name)
+        {
+            try
+            {
+                return ModReflect.FindType(name);
+            }
+            catch
+            {
+                return null;
+            }
+        }
 
         // ------------------------------------------------------------------
         // 外观参数。要调就调这几个。
@@ -258,10 +272,11 @@ namespace QoL
 
                 if (OnInspectItem == null)
                 {
-                    Type t = AccessTools.TypeByName("InspectionUIManager");
+                    // 先找类型再找方法，两步都走游戏的 ModReflect 通道（异常已由 ReflectSafe 兜住）
+                    Type t = FindTypeSafe("InspectionUIManager");
                     if (t != null)
                     {
-                        OnInspectItem = AccessTools.Method(t, "OnInspectItem");
+                        OnInspectItem = ReflectSafe.Target(t, "OnInspectItem") as MethodInfo;
                     }
                 }
             }
