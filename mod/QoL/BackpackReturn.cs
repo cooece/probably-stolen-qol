@@ -113,6 +113,9 @@ namespace QoL
                     Y = pack.modifiedShape.minY,
                     Contents = Ids(BoxOf(pack))
                 };
+
+                QLog.Info("出门前：背包「" + pack.name + "」在" + NameOf(pack.parentInventory) +
+                    " (" + pack.modifiedShape.minX + "," + pack.modifiedShape.minY + ")");
             }
             catch (Exception e)
             {
@@ -223,6 +226,7 @@ namespace QoL
                 GameInventory source = pack.parentInventory;
                 if (target == null || source == null)
                 {
+                    QLog.Info("归位诊断：目标=" + NameOf(target) + " 来源=" + NameOf(source) + "（跳过）");
                     return;
                 }
 
@@ -236,24 +240,36 @@ namespace QoL
                 GridShapeBuilder shape = pack.modifiedShape.Clone() as GridShapeBuilder;
                 if (shape == null)
                 {
+                    QLog.Info("归位诊断：形状不是 GridShapeBuilder（" + pack.modifiedShape.GetType().Name + "）");
                     return;
                 }
 
                 shape.SetPosition(home.X, home.Y);
 
-                // 位置给 NaN：不按鼠标位置算，用上面给的坐标
-                SlotMarker slot = target.TryInventorySlot(pack, pack.unitCount, new Vector2(float.NaN, 0f), shape, null);
+                // 数量固定 1：原版 GraphUtils.TryAccept 就是 TryAcceptOnce(1)；
+                // 传 unitCount 在它为 0 时会让 numTransfer 直接变 0，传大于 1 又会触发拆分
+                SlotMarker slot = target.TryInventorySlot(pack, 1, new Vector2(float.NaN, 0f), shape, null);
                 if (slot == null || slot.numTransfer < 1)
                 {
+                    QLog.Info("归位诊断：原位放不下 —— 目标=" + NameOf(target) +
+                        " 容器=" + SizeOf(target) +
+                        " 记录坐标=(" + home.X + "," + home.Y + ")" +
+                        " 形状=" + shape.globalWidth + "×" + shape.globalHeight +
+                        " 现在在" + NameOf(source) +
+                        " numTransfer=" + (slot == null ? -1 : slot.numTransfer) +
+                        " unitCount=" + pack.unitCount +
+                        " 可移除=" + pack.MaxNumRemove() +
+                        " 愿意收=" + target.MayHaveValidInventorySlot(pack));
                     return;      // 原位被占 / 放不下：保留原版「第一个空位」的结果
                 }
 
                 if (!source.Expel(pack))
                 {
+                    QLog.Info("归位诊断：从" + NameOf(source) + "移出失败");
                     return;
                 }
 
-                slot.TryAcceptOnce(pack.unitCount);
+                slot.TryAcceptOnce(1);
 
                 // 只认结果：TryAcceptOnce 的返回值会骗人，父容器变了才算成功
                 if (ReferenceEquals(pack.parentInventory, target))
@@ -319,6 +335,36 @@ namespace QoL
             }
 
             return ids;
+        }
+
+        private static string SizeOf(GameInventory inventory)
+        {
+            GameGridInventory grid = inventory as GameGridInventory;
+            if (grid != null && grid.inventoryShape != null)
+            {
+                return grid.inventoryShape.width + "×" + grid.inventoryShape.height;
+            }
+
+            return "?";
+        }
+
+        private static string NameOf(GameInventory inventory)
+        {
+            EmporiumEntry entry = EmporiumEntry.Instance;
+            if (inventory == null)
+            {
+                return "null";
+            }
+
+            if (entry != null)
+            {
+                if (ReferenceEquals(inventory, entry.backInvinvElement)) return "后仓";
+                if (ReferenceEquals(inventory, entry.frontInvinvElement)) return "前厅";
+                if (ReferenceEquals(inventory, entry.invElement)) return "随身背包";
+                if (ReferenceEquals(inventory, entry.showcaseElement)) return "展示柜";
+            }
+
+            return inventory.GetType().Name;
         }
 
         private static void WarnOnce(string text)
