@@ -19,18 +19,24 @@
   <ID>local.qol</ID>
   <Name>深空当铺 · 便利整合（QoL Bundle）</Name>
   <Author>cooece</Author>
-  <ModVersion>1.1.0</ModVersion>
+  <ModVersion>1.2.0</ModVersion>
   <GameVersions>
     <Version>0.46D</Version>
   </GameVersions>
   <Description>深空当铺的一站式体验优化，全部后台生效，只保留一个设置面板。
 
 交易与顾客：价格趋势、真伪自动揭穿、成交金额与声望播报、到店提示、对话加速、未击杀改造体的摇铃确认。
-仓储与物品：箱子批量贴标签、荧光莓品质角标、物品详情与价格拆解、长按框选统计数量。
-机器与电力：全自动换电池（周期机器早晨补换、主动工具按需装填）、机器内部与模块提示。
+仓储与物品：箱子批量贴标签、荧光莓品质角标、右键一键升级/修理/充能、长按框选统计数量、
+外出归来背包放回原位并把新拿到的物品倒出来。
+机器与电力：全自动换电池、自动换滤芯、解序器自动续卡、机器区与走私者暗格多页扩容（默认关闭）。
 面板里每一项都能单独开关，改完立即生效；不碰存档，新档老档都安全。
 
-A one-stop quality-of-life bundle: price trends, auto-authentication, cash and reputation popups, dialogue speed-up, box labelling, berry quality badges, item details, box-drag counting, fully automatic battery swapping, machine and power tooltips. Everything toggles individually in the settings panel and applies immediately; saves are never touched.</Description>
+A one-stop quality-of-life bundle: price trends, auto-authentication, cash and reputation popups,
+dialogue speed-up, box labelling, berry quality badges, drag-select counting, one-click
+upgrade/repair/charge from the right-click menu, backpack returning to its original spot after an
+outing, automatic battery and filter swapping, desequencer auto-refill, and multi-page storage for
+machine areas and smuggler bays. Everything toggles individually in the settings panel and applies
+immediately; saves are never touched.</Description>
   <Prerequisites />
   <Assemblies>
     <Assembly>QoL.dll</Assembly>
