@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
-using UnityEngine;
 
 namespace QoL
 {
@@ -14,11 +13,10 @@ namespace QoL
     ///   回来 OnReturning    → TransferAfterhourToInv()：背包经 TryAddToPlayerInv
     ///                        → 先试后仓、再试随身背包、最后试展示柜 = 「第一个空位」
     ///
-    /// 我们只在两端各插一次：
-    ///   1. TransferBackpackToInv 之前：记下 selectedBackpack 的位置与已有内容（此刻它还在原位）
-    ///   2. TransferAfterhourToInv 之后：放回原格子；新拿到的东西按原版顺序倒进店里
-    ///
-    /// 原位被占 / 形状放不下时什么都不做，保留原版结果。
+    /// 我们挂的是**前缀**，不是后缀：
+    ///   在 TransferAfterhourToInv 开始前，背包还在外出槽里 —— 取出来直接放回原位。
+    ///   放成功，槽就空了，原版那句 `if (childItem != null)` 自然不成立，也就不会再去堆第一个空位；
+    ///   放不进去就把背包塞回槽里，原版照常处理。这样只有一次搬运，没有中间态。
     /// </summary>
     internal static class BackpackReturn
     {
@@ -27,8 +25,9 @@ namespace QoL
         private sealed class Home
         {
             internal GameInventory Inventory;
-            internal int X;
-            internal int Y;
+
+            /// <summary>整个形状的副本（含位置、朝向），不是拆出来的两个坐标。</summary>
+            internal GridShape Shape;
             internal HashSet<int> Contents;
         }
 
@@ -58,7 +57,7 @@ namespace QoL
 
                 _harmony = new Harmony(HarmonyId);
                 _harmony.Patch(before, prefix: new HarmonyMethod(typeof(BackpackReturn), nameof(RecordHome)));
-                _harmony.Patch(after, postfix: new HarmonyMethod(typeof(BackpackReturn), nameof(RestoreHome)));
+                _harmony.Patch(after, prefix: new HarmonyMethod(typeof(BackpackReturn), nameof(RestoreHome)));
 
                 QLog.Info("背包归位已挂载");
             }
@@ -99,7 +98,7 @@ namespace QoL
                     return;
                 }
 
-                // 打烊选单里选中的那个背包，此刻还在后仓原位（方法体执行完才会被装进外出槽）
+                // 打烊选单里选中的那个背包，此刻还在原位（方法体执行完才会被装进外出槽）
                 GameItem pack = entry.selectedBackpack;
                 if (pack == null || pack.parentInventory == null || pack.modifiedShape == null)
                 {
@@ -109,13 +108,14 @@ namespace QoL
                 Saved[pack.uniqueId] = new Home
                 {
                     Inventory = pack.parentInventory,
-                    X = pack.modifiedShape.minX,
-                    Y = pack.modifiedShape.minY,
+                    Shape = new GridShapeBuilder(pack.modifiedShape).Build(),
                     Contents = Ids(BoxOf(pack))
                 };
 
+                GridShape shape = pack.modifiedShape;
                 QLog.Info("出门前：背包「" + pack.name + "」在" + NameOf(pack.parentInventory) +
-                    " (" + pack.modifiedShape.minX + "," + pack.modifiedShape.minY + ")");
+                    " 形状=(" + shape.minX + "," + shape.minY + ")-(" + shape.maxX + "," + shape.maxY +
+                    ") 朝向=" + shape.orientation + " 翻转=" + shape.flipped);
             }
             catch (Exception e)
             {
@@ -124,10 +124,11 @@ namespace QoL
         }
 
         // ---------------------------------------------------------------
-        // 回来：归位 + 倒出新东西
+        // 回来：倒出新东西 + 放回原位
         // ---------------------------------------------------------------
 
-        private static void RestoreHome()
+        /// <summary>挂在 TransferAfterhourToInv 之前：背包还躺在外出槽里，此时取出最干净。</summary>
+        private static void RestoreHome(EmporiumEntry __instance)
         {
             if (Saved.Count == 0)
             {
@@ -136,23 +137,38 @@ namespace QoL
 
             try
             {
-                EmporiumEntry entry = EmporiumEntry.Instance;
-                if (entry == null)
+                if (__instance == null)
                 {
                     return;
                 }
 
-                foreach (KeyValuePair<int, Home> pair in Saved)
+                GameSlotInventory slot = __instance.afterhourPocketSlotInvBackpack;
+                GameItem pack = slot != null ? slot.childItem : null;
+                if (pack == null)
                 {
-                    GameItem pack = entry.FindItemByUniqueID(pair.Key);
-                    if (pack == null)
-                    {
-                        continue;      // 背包被用掉/卖掉，跳过
-                    }
-
-                    EmptyNewLoot(entry, pack, pair.Value);
-                    PutBack(pack, pair.Value);
+                    return;
                 }
+
+                Home home;
+                if (!Saved.TryGetValue(pack.uniqueId, out home))
+                {
+                    return;
+                }
+
+                // 1) 先把外出期间新拿到的东西倒进店里（此时背包还在槽里，最安全）
+                EmptyNewLoot(__instance, pack, home);
+
+                // 2) 再把背包放回原位；失败就交给原版
+                slot.Expel(pack);
+
+                if (TryPlace(home.Inventory, pack, home.Shape))
+                {
+                    QLog.Info("外出归来：背包「" + pack.name + "」已放回原位");
+                    return;
+                }
+
+                slot.UncheckedAccept(pack);
+                QLog.Info("外出归来：原位放不下，背包交给原版处理");
             }
             catch (Exception e)
             {
@@ -217,72 +233,32 @@ namespace QoL
             }
         }
 
-        /// <summary>把背包放回出门前那个容器的那个格子。</summary>
-        private static void PutBack(GameItem pack, Home home)
+        /// <summary>按保存的形状放到指定格子。数量固定 1：原版放置就是 TryAcceptOnce(1)。</summary>
+        private static bool TryPlace(GameInventory inventory, GameItem item, GridShape shape)
         {
+            if (inventory == null || item == null || shape == null)
+            {
+                return false;
+            }
+
             try
             {
-                GameInventory target = home.Inventory;
-                GameInventory source = pack.parentInventory;
-                if (target == null || source == null)
+                // 4 参数重载内部用 -Infinity 作为鼠标位置，等于「别重算，用我给的形状」
+                SlotMarker slot = inventory.TryInventorySlot(item, 1, shape, item.modifiedState);
+                if (slot == null || slot.numTransfer < 1 || slot.targetItem != null || slot.inventory == null)
                 {
-                    QLog.Info("归位诊断：目标=" + NameOf(target) + " 来源=" + NameOf(source) + "（跳过）");
-                    return;
-                }
-
-                GridShape now = pack.modifiedShape;
-                if (ReferenceEquals(source, target) && now != null && now.minX == home.X && now.minY == home.Y)
-                {
-                    return;      // 已经在原位，别动
-                }
-
-                // 克隆一份再改坐标：直接改 modifiedShape 会污染物品自己的形状
-                GridShapeBuilder shape = pack.modifiedShape.Clone() as GridShapeBuilder;
-                if (shape == null)
-                {
-                    QLog.Info("归位诊断：形状不是 GridShapeBuilder（" + pack.modifiedShape.GetType().Name + "）");
-                    return;
-                }
-
-                shape.SetPosition(home.X, home.Y);
-
-                // 数量固定 1：原版 GraphUtils.TryAccept 就是 TryAcceptOnce(1)；
-                // 传 unitCount 在它为 0 时会让 numTransfer 直接变 0，传大于 1 又会触发拆分
-                SlotMarker slot = target.TryInventorySlot(pack, 1, new Vector2(float.NaN, 0f), shape, null);
-                if (slot == null || slot.numTransfer < 1)
-                {
-                    QLog.Info("归位诊断：原位放不下 —— 目标=" + NameOf(target) +
-                        " 容器=" + SizeOf(target) +
-                        " 记录坐标=(" + home.X + "," + home.Y + ")" +
-                        " 形状=" + shape.globalWidth + "×" + shape.globalHeight +
-                        " 现在在" + NameOf(source) +
-                        " numTransfer=" + (slot == null ? -1 : slot.numTransfer) +
-                        " unitCount=" + pack.unitCount +
-                        " 可移除=" + pack.MaxNumRemove() +
-                        " 愿意收=" + target.MayHaveValidInventorySlot(pack));
-                    return;      // 原位被占 / 放不下：保留原版「第一个空位」的结果
-                }
-
-                if (!source.Expel(pack))
-                {
-                    QLog.Info("归位诊断：从" + NameOf(source) + "移出失败");
-                    return;
+                    return false;
                 }
 
                 slot.TryAcceptOnce(1);
 
                 // 只认结果：TryAcceptOnce 的返回值会骗人，父容器变了才算成功
-                if (ReferenceEquals(pack.parentInventory, target))
-                {
-                    QLog.Info("外出归来：背包「" + pack.name + "」已放回原位 (" + home.X + "," + home.Y + ")");
-                    return;
-                }
-
-                source.UncheckedAccept(pack);      // 没放进去，塞回原处
+                return ReferenceEquals(item.parentInventory, inventory);
             }
             catch (Exception e)
             {
-                WarnOnce("背包归位失败：" + e.Message);
+                WarnOnce("放到指定格子失败：" + e.Message);
+                return false;
             }
         }
 
@@ -335,17 +311,6 @@ namespace QoL
             }
 
             return ids;
-        }
-
-        private static string SizeOf(GameInventory inventory)
-        {
-            GameGridInventory grid = inventory as GameGridInventory;
-            if (grid != null && grid.inventoryShape != null)
-            {
-                return grid.inventoryShape.width + "×" + grid.inventoryShape.height;
-            }
-
-            return "?";
         }
 
         private static string NameOf(GameInventory inventory)
