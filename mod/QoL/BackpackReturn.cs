@@ -111,11 +111,6 @@ namespace QoL
                     Shape = new GridShapeBuilder(pack.modifiedShape).Build(),
                     Contents = Ids(BoxOf(pack))
                 };
-
-                GridShape shape = pack.modifiedShape;
-                QLog.Info("出门前：背包「" + pack.name + "」在" + NameOf(pack.parentInventory) +
-                    " 形状=(" + shape.minX + "," + shape.minY + ")-(" + shape.maxX + "," + shape.maxY +
-                    ") 朝向=" + shape.orientation + " 翻转=" + shape.flipped);
             }
             catch (Exception e)
             {
@@ -311,25 +306,6 @@ namespace QoL
             }
 
             return ids;
-        }
-
-        private static string NameOf(GameInventory inventory)
-        {
-            EmporiumEntry entry = EmporiumEntry.Instance;
-            if (inventory == null)
-            {
-                return "null";
-            }
-
-            if (entry != null)
-            {
-                if (ReferenceEquals(inventory, entry.backInvinvElement)) return "后仓";
-                if (ReferenceEquals(inventory, entry.frontInvinvElement)) return "前厅";
-                if (ReferenceEquals(inventory, entry.invElement)) return "随身背包";
-                if (ReferenceEquals(inventory, entry.showcaseElement)) return "展示柜";
-            }
-
-            return inventory.GetType().Name;
         }
 
         private static void WarnOnce(string text)
