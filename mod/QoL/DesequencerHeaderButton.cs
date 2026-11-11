@@ -46,16 +46,17 @@ namespace QoL
 
         private static void Scan()
         {
-            List<GameItem> all = DesequencerAutoFeed.AllOwnedItems();
-            if (all.Count == 0)
+            // 用解序器缓存：这里只需要解序器，不需要全店物品
+            List<GameItem> machines = DesequencerAutoFeed.Machines();
+            if (machines.Count == 0)
             {
                 return;
             }
 
-            for (int i = 0; i < all.Count; i++)
+            for (int i = 0; i < machines.Count; i++)
             {
-                GameItem item = all[i];
-                if (item == null || !item.IsTag(DesequencerAutoFeed.StateTag))
+                GameItem item = machines[i];
+                if (item == null)
                 {
                     continue;
                 }

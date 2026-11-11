@@ -323,14 +323,26 @@ namespace QoL
             return null;
         }
 
-        private static List<GameItem> Machines()
+        private static List<GameItem> _machines;
+        private static float _machinesAt = -99f;
+
+        /// <summary>
+        /// 店里的解序器列表。缓存 5 秒：收卡每秒跑一次、标题栏按钮 0.4 秒跑一次，
+        /// 都只用这几台机器，没必要每次都把全店物品树走一遍。
+        /// 玩家新放一台机器最多晚 5 秒被认到，不影响使用。
+        /// </summary>
+        internal static List<GameItem> Machines()
         {
+            if (_machines != null && Time.unscaledTime - _machinesAt < 5f) return _machines;
+
             List<GameItem> list = new List<GameItem>();
             foreach (GameItem item in AllOwnedItems())
             {
                 if (item != null && item.IsTag(StateTag)) list.Add(item);
             }
 
+            _machines = list;
+            _machinesAt = Time.unscaledTime;
             return list;
         }
 

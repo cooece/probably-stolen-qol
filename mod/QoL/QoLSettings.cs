@@ -313,7 +313,7 @@ namespace QoL
 
             VerboseLogging = _config.Define(
                 "dev.verbose_logging",
-                true,
+                false,
                 "开发者",
                 () => "详细日志",
                 () => "把详细排查日志写到 ModConfigs/local.qol.log。出问题时复制这个文件就行。");
