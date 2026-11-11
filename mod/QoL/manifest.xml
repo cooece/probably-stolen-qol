@@ -43,6 +43,5 @@ immediately; saves are never touched.</Description>
   </Assemblies>
   <Capabilities>
     <Capability>files</Capability>
-    <Capability>reflection-external</Capability>
   </Capabilities>
 </Mod>

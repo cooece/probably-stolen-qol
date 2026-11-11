@@ -30,7 +30,6 @@ namespace QoL
         private const float RetryCooldown = 3f;
         // 主动型工具用完电池后，先让它在槽里显示一会儿再还，避免「空槽却产出物品」
         private const float ReturnDelay = 1.5f;
-        private const int MaxClosureDepth = 3;
         // 低于这个电量的电池干不了活：小号水瓶打印要 4 点，其余机器一次耗电也不低于这个量级。
         // 用它区分「还有电」和「还剩点零头、根本用不了」。
         private const int MinUsableEnergy = 4;
@@ -39,9 +38,6 @@ namespace QoL
         internal const string MorningOnly = "只早晨换";
         internal const string Auto1 = "随时换（够 1 次）";
         internal const string Auto2 = "随时换（够 2 次）";
-
-        private static readonly FieldInfo CallbackField =
-            AccessTools.Field(typeof(MachineryButton), "callback");
 
         private static Harmony _harmony;
         private static bool _applied;
@@ -148,12 +144,6 @@ namespace QoL
             if (onSelect == null)
             {
                 QLog.Warn("自动换电池：找不到 MachineryButton.OnSelect，按需装填不可用");
-                return;
-            }
-
-            if (CallbackField == null)
-            {
-                QLog.Warn("自动换电池：找不到按钮回调字段，按需装填不可用");
                 return;
             }
 
@@ -387,61 +377,45 @@ namespace QoL
             return marker.TryAcceptOnce(1) == 1;
         }
 
-        /// <summary>从按钮回调闭包里找出它对应的电池槽；找不到就当普通按钮放过。</summary>
+        /// <summary>
+        /// 从按钮反推它所在的机器，再取电池槽。
+        ///
+        /// 原来靠遍历回调闭包的字段找槽位（`Type.GetFields` on a computed type），
+        /// 被游戏的模组扫描器判成 reflection-external。改成走公开接口：
+        /// `btn.handler.window` 是控件所在窗口，窗口对应的那件物品就是机器。
+        /// </summary>
         private static GameSlotInventory FindBatterySlot(MachineryButton btn)
         {
-            if (btn == null || CallbackField == null) return null;
-            Action cb = CallbackField.GetValue(btn) as Action;
-            if (cb == null || cb.Target == null) return null;
-            return ScanForSlot(cb.Target, 0);
-        }
+            if (btn == null) return null;
 
-        private static GameSlotInventory ScanForSlot(object obj, int depth)
-        {
-            if (obj == null || depth > MaxClosureDepth) return null;
+            // 控件自己的节点上不挂 window，要沿父链爬到窗口根节点
+            PixelWindow window;
+            try { window = btn.handler != null ? btn.handler.FindParentWindow() : null; }
+            catch { window = null; }
 
-            FieldInfo[] fields;
-            try { fields = obj.GetType().GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic); }
-            catch { return null; }
+            if (window == null) return null;
 
-            for (int i = 0; i < fields.Length; i++)
+            List<GameItem> all = AllItems();
+            for (int i = 0; i < all.Count; i++)
             {
-                object v;
-                try { v = fields[i].GetValue(obj); }
-                catch { continue; }
-                if (v == null) continue;
+                GameItem item = all[i];
+                if (item == null) continue;
 
-                GameSlotInventory slot = v as GameSlotInventory;
-                if (slot != null) return slot;
-
-                // 兜底：有的闭包只捕获机器本体，从机器反查电池槽
-                GameItem machine = v as GameItem;
-                if (machine != null && machine.IsTag("MACHINE_RECHARGABLE_TAG"))
+                try
                 {
-                    try
-                    {
-                        GameSlotInventory s = MachineHelper.GetBatterySlot(machine);
-                        if (s != null) return s;
-                    }
-                    catch { }
+                    if (!ReferenceEquals(item.contentWindow, window)) continue;
+
+                    GameSlotInventory slot = MachineHelper.GetBatterySlot(item);
+                    if (slot != null) return slot;
                 }
-
-                // 只在编译器生成的闭包对象里继续找，避免顺着游戏对象图无限递归
-                string tn = fields[i].FieldType.Name;
-                if (tn.IndexOf("DisplayClass", StringComparison.Ordinal) >= 0 ||
-                    tn.IndexOf("<>", StringComparison.Ordinal) >= 0 ||
-                    fields[i].Name.IndexOf("<>", StringComparison.Ordinal) >= 0)
+                catch
                 {
-                    GameSlotInventory found = ScanForSlot(v, depth + 1);
-                    if (found != null) return found;
+                    // 单件物品读不到就跳过
                 }
             }
+
             return null;
         }
-
-        // ---------------------------------------------------------------
-        // 每帧驱动：统一处理队列
-        // ---------------------------------------------------------------
 
         /// <summary>
         /// 备用电池全没电时，用游戏自带的对话气泡提示一次（和「支付宝到账」同一个组件，
