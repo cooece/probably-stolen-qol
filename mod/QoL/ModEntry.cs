@@ -79,6 +79,7 @@ namespace QoL
             ApplySafe("解序器续卡", DesequencerAutoFeed.Apply);
             ApplySafe("右键升级", UpgradeMenu.Apply);
             ApplySafe("扩容页", BayExpansion.Apply);
+            ApplySafe("背包归位", BackpackReturn.Apply);
             ApplySafe("设置页隐藏项", SettingsHideEntry.Apply);
             ApplySafe("酿酒工坊", Brewing.Apply);
 
@@ -101,6 +102,7 @@ namespace QoL
             RemoveSafe("解序器续卡", DesequencerAutoFeed.Remove);
             RemoveSafe("右键升级", UpgradeMenu.Remove);
             RemoveSafe("扩容页", BayExpansion.Remove);
+            RemoveSafe("背包归位", BackpackReturn.Remove);
             RemoveSafe("设置页隐藏项", SettingsHideEntry.Remove);
             RemoveSafe("酿酒工坊", Brewing.Remove);
             RemoveSafe("道具快捷键", QuickToolHotkey.Remove);
