@@ -282,6 +282,10 @@ namespace QoL
                 List<GameItem> cells = CollectCells(AllItems());
                 GameItem cur = slot.childItem;
 
+                // 电流转换器（用信用点换电）：玩家故意选的供电方式，它本身没有"电量"这个概念，
+                // 按电量判断会被当成"没电"而换掉。只挡它，一次性/高科技电池仍照常按电量处理。
+                if (cur != null && CurrentConverterHelper.IsCurrentConverter(cur)) return;
+
                 // 还有电的电池是玩家自己放的，一律不碰、也不取回；
                 // 只在空槽、或者槽里那块只剩零头干不动时动手。
                 if (cur != null && Energy(cur) >= MinUsableEnergy) return;
