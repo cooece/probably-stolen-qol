@@ -16,6 +16,9 @@ namespace QoL
         /// <summary>当前模组 ID，Init 时从 manifest.xml 里读出来。</summary>
         internal static string ModId { get; private set; } = "local.qol";
 
+        /// <summary>当前模组版本，Init 时从 manifest.xml 里读出来。</summary>
+        internal static string Version { get; private set; } = "?";
+
         /// <summary>设置项。OnEnable 之后才可用。</summary>
         internal static QoLSettings Settings { get; private set; }
 
@@ -30,6 +33,7 @@ namespace QoL
                 }
 
                 string ver = manifest != null ? manifest.ModVersion : "?";
+                Version = ver;
                 QLog.Init();
                 QLog.Info("Init，ID=" + ModId + "，版本=" + ver);
             }
@@ -87,7 +91,7 @@ namespace QoL
             catch (Exception e) { QLog.Error("订阅提示框钩子失败", e); }
 
             QLog.Info("已启用：" + (Settings != null ? Settings.Count : 0) + " 项设置，配置文件 " +
-                      (Settings != null ? Settings.FilePath : "?") + "，日志路径 " + QLog.LogFilePath);
+                      (Settings != null ? Settings.FilePath : "?"));
         }
 
         public void OnDisable()

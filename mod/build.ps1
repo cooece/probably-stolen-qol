@@ -32,6 +32,19 @@ New-Item -ItemType Directory -Force -Path $dest | Out-Null
 try {
     Copy-Item (Join-Path $root "QoL\bin\$Configuration\QoL.dll") $dest -Force
     Copy-Item (Join-Path $root "QoL\manifest.xml") $dest -Force
+
+    # 贴图放 Textures\：游戏启动时自动读进 LoadedMod.Textures，模组代码不用碰文件
+    $assets = Join-Path $root "QoL\Assets"
+    if (Test-Path $assets) {
+        $texDest = Join-Path $dest "Textures"
+        New-Item -ItemType Directory -Path $texDest -Force | Out-Null
+        Get-ChildItem $assets -Filter *.png -File -Recurse | ForEach-Object {
+            Copy-Item $_.FullName (Join-Path $texDest $_.Name) -Force
+        }
+    }
+
+    # 旧位置（根目录）的图不再使用，部署时清掉
+    Get-ChildItem $dest -Filter *.png -File -ErrorAction SilentlyContinue | Remove-Item -Force
 }
 catch {
     Write-Host ""

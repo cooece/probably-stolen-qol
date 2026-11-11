@@ -52,15 +52,19 @@ New-Item -ItemType Directory -Path $out -Force | Out-Null
 Copy-Item $dll (Join-Path $out 'QoL.dll')
 Copy-Item (Join-Path $src 'manifest.xml') (Join-Path $out 'manifest.xml')
 
-# 模组自带的图片资源（框选统计的遮罩），必须和 DLL 同目录
-# 源码放在 Assets\ 下，游戏加载时按 DLL 同目录的文件名去找，所以这里拍平到根目录
+# 模组自带的图片资源（框选统计的遮罩）。
+# 必须放在 Textures\ 子目录：游戏启动时会把 Mods/<id>/Textures/*.png 读进内存，
+# 模组从 LoadedMod.Textures 取，这样代码里不需要任何文件接口（省掉 files 权限）。
 $assets = Join-Path $src 'Assets'
 if (Test-Path $assets) {
+    $texOut = Join-Path $out 'Textures'
+    New-Item -ItemType Directory -Path $texOut -Force | Out-Null
     Get-ChildItem $assets -Filter *.png -File -Recurse | ForEach-Object {
-        Copy-Item $_.FullName (Join-Path $out $_.Name) -Force
+        Copy-Item $_.FullName (Join-Path $texOut $_.Name) -Force
     }
 }
-Get-ChildItem $src -Filter *.png -File | ForEach-Object { Copy-Item $_.FullName (Join-Path $out $_.Name) -Force }
+# 旧位置（根目录）的图不再使用，打包时清掉，免得混淆
+Get-ChildItem $out -Filter *.png -File | Where-Object { $_.Name -ne 'preview.png' } | Remove-Item -Force
 
 # 封面图不进内容包：封面（preview.jpg）只放在 workshop\ 下，由网页「添加/编辑图片」上传。
 # 这样玩家的下载包里没有重复图片，体积最小。

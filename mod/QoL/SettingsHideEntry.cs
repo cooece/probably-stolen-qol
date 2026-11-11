@@ -13,7 +13,8 @@ namespace QoL
     internal static class SettingsHideEntry
     {
         private const string HarmonyId = "local.qol.settings_hide";
-        private const string HiddenKey = "machine.desequencer_auto";
+        /// <summary>不希望出现在设置页里的项：解序器续卡开关、快捷键绑定数据。</summary>
+        private static readonly string[] HiddenKeys = { "machine.desequencer_auto", "hotkey.store" };
 
         private static Harmony _harmony;
 
@@ -36,7 +37,7 @@ namespace QoL
                 _harmony = new Harmony(HarmonyId);
                 _harmony.Patch(build,
                     prefix: new HarmonyMethod(typeof(SettingsHideEntry), nameof(SkipHidden)));
-                QLog.Info("设置页隐藏项已挂载（" + HiddenKey + "）");
+                QLog.Info("设置页隐藏项已挂载（" + string.Join(", ", HiddenKeys) + "）");
             }
             catch (Exception e)
             {
@@ -62,7 +63,14 @@ namespace QoL
         {
             try
             {
-                return entry == null || !string.Equals(entry.Key, HiddenKey, StringComparison.Ordinal);
+                if (entry == null) return true;
+
+                for (int i = 0; i < HiddenKeys.Length; i++)
+                {
+                    if (string.Equals(entry.Key, HiddenKeys[i], StringComparison.Ordinal)) return false;
+                }
+
+                return true;
             }
             catch
             {

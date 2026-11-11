@@ -62,7 +62,6 @@ namespace QoL
         }
 
         // 缓存解析后的绑定表
-        private static string _cachedRawBindings;
         private static bool _bindingsLoaded;
         private static readonly Dictionary<string, KeyCode> _parsedBindings = new Dictionary<string, KeyCode>();
 
@@ -627,32 +626,8 @@ namespace QoL
         }
 
         // ---------------- 快捷键配置存储与解析 ----------------
-        // 绑定数据存到独立文件（与 ModConfig 同目录），内容格式 key=value;key=value，
-        // 是纯文本，只是扩展名叫 .hotkeys.json。这样设置页不会多出一个「绑定数据」文本框。
-        private static string _bindingsFilePath;
-
-        private static string BindingsFilePath
-        {
-            get
-            {
-                if (_bindingsFilePath == null)
-                {
-                    QoLSettings s = ModEntry.Settings;
-                    if (s != null && !string.IsNullOrEmpty(s.FilePath))
-                    {
-                        // FilePath 形如 .../ModConfigs/local.qol.json
-                        string dir = System.IO.Path.GetDirectoryName(s.FilePath);
-                        string baseName = System.IO.Path.GetFileNameWithoutExtension(s.FilePath);
-                        _bindingsFilePath = System.IO.Path.Combine(dir, baseName + ".hotkeys.json");
-                    }
-                    else
-                    {
-                        _bindingsFilePath = "";
-                    }
-                }
-                return _bindingsFilePath;
-            }
-        }
+        // 绑定数据存在游戏自己的配置里（`hotkey.store` 这一项），格式 key=value;key=value。
+        // 以前是写一个 .hotkeys.json 文件，那需要 `files` 能力；改由游戏写盘后不需要了。
 
         private static void SyncBindings()
         {
@@ -665,19 +640,13 @@ namespace QoL
             }
             _bindingsLoaded = true;
 
-            string path = BindingsFilePath;
             string raw = "";
-            if (!string.IsNullOrEmpty(path) && System.IO.File.Exists(path))
+            try
             {
-                try
-                {
-                    raw = System.IO.File.ReadAllText(path);
-                }
-                catch { raw = ""; }
+                QoLSettings s = ModEntry.Settings;
+                if (s != null && s.HotkeyStore != null) raw = s.HotkeyStore.Value ?? "";
             }
-            raw = raw ?? "";
-
-            _cachedRawBindings = raw;
+            catch { raw = ""; }
 
             _parsedBindings.Clear();
             string[] pairs = raw.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
@@ -733,19 +702,11 @@ namespace QoL
             }
 
             string serialized = string.Join(";", parts);
-            _cachedRawBindings = serialized;
-
-            string path = BindingsFilePath;
-            if (string.IsNullOrEmpty(path)) return;
 
             try
             {
-                string dir = System.IO.Path.GetDirectoryName(path);
-                if (!string.IsNullOrEmpty(dir) && !System.IO.Directory.Exists(dir))
-                {
-                    System.IO.Directory.CreateDirectory(dir);
-                }
-                System.IO.File.WriteAllText(path, serialized);
+                QoLSettings s = ModEntry.Settings;
+                if (s != null && s.HotkeyStore != null) s.HotkeyStore.Set(serialized);
             }
             catch (Exception ex)
             {
@@ -780,21 +741,8 @@ namespace QoL
             }
             if (count == 0) return 0;
 
-            // 一键清空是破坏性操作：先把旧绑定留一份备份，误点了还能照着恢复
-            string backupPath = "";
-            try
-            {
-                string path = BindingsFilePath;
-                if (!string.IsNullOrEmpty(path))
-                {
-                    backupPath = path + ".bak";
-                    System.IO.File.WriteAllText(backupPath, _cachedRawBindings ?? "");
-                }
-            }
-            catch (Exception ex)
-            {
-                QLog.Warn("[工具快捷键] 备份旧绑定失败：" + ex.Message);
-            }
+            // 一键清空是破坏性操作：旧绑定先写进日志，误点了还能照着恢复
+            QLog.Info("[工具快捷键] 清空前的绑定：" + string.Join(";", detail.ToArray()));
 
             _parsedBindings.Clear();
             PersistBindings();
@@ -813,10 +761,8 @@ namespace QoL
             _pendingGroup = null;
             if (_capturingGroup != null) EndCapture();
 
-            // 日志留明细 + 备份路径，万一误点也能照着恢复
-            QLog.Info("[工具快捷键] 已清除全部 " + count + " 个绑定：" +
-                      string.Join("、", detail.ToArray()) +
-                      (string.IsNullOrEmpty(backupPath) ? "" : "；旧绑定备份于 " + backupPath));
+            // 明细已经在上面的「清空前的绑定」里记过，这里只报数量
+            QLog.Info("[工具快捷键] 已清除全部 " + count + " 个绑定");
             return count;
         }
 

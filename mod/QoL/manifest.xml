@@ -41,7 +41,5 @@ immediately; saves are never touched.</Description>
   <Assemblies>
     <Assembly>QoL.dll</Assembly>
   </Assemblies>
-  <Capabilities>
-    <Capability>files</Capability>
-  </Capabilities>
+  <Capabilities />
 </Mod>

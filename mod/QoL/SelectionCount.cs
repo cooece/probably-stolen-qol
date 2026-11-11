@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Reflection;
 using System.Text;
 using HarmonyLib;
@@ -418,7 +417,17 @@ namespace QoL
             return t;
         }
 
-        /// <summary>从 MOD 目录读玩家画的干净屏幕补丁，只读一次。</summary>
+        private const string PatchName = "negociation_tablet_ScreenOverlay";
+
+        /// <summary>
+        /// 取遮罩图，只读一次。
+        ///
+        /// 以前是直接读 DLL 同目录的 PNG —— 那需要向游戏声明 `files` 能力
+        /// （"读取或写入此电脑上任意位置的文件"），而这个能力 2026-12-10 之后会让工坊模组
+        /// 必须通过开发者验证才能加载。
+        /// 现在图片放在 `Mods/qol/Textures/`，游戏启动时自己读进 `LoadedMod.Textures`，
+        /// 我们只从内存里取，不碰任何文件接口。
+        /// </summary>
         private static Sprite LoadPatch()
         {
             if (_patchSprite != null) return _patchSprite;
@@ -426,23 +435,11 @@ namespace QoL
 
             try
             {
-                string dir = Path.GetDirectoryName(typeof(SelectionCount).Assembly.Location);
-                string file = Path.Combine(dir, "negociation_tablet_ScreenOverlay.png");
-                if (!File.Exists(file))
+                Texture2D tex = PatchTexture();
+                if (tex == null)
                 {
                     _patchLoadFailed = true;
-                    QLog.Warn("框选统计：找不到遮罩图 " + file);
-                    return null;
-                }
-
-                byte[] data = File.ReadAllBytes(file);
-                var tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
-                tex.filterMode = FilterMode.Point;
-                tex.wrapMode = TextureWrapMode.Clamp;
-                if (!tex.LoadImage(data))
-                {
-                    _patchLoadFailed = true;
-                    UnityEngine.Object.Destroy(tex);
+                    QLog.Warn("框选统计：没找到遮罩图 " + PatchName + ".png（应放在 Mods/qol/Textures/ 下）");
                     return null;
                 }
 
@@ -460,6 +457,26 @@ namespace QoL
                 QLog.Warn("框选统计：遮罩图加载失败 —— " + e.Message);
                 return null;
             }
+        }
+
+        /// <summary>从游戏加载好的模组贴图里取这一张（键名就是文件名去掉扩展名）。</summary>
+        private static Texture2D PatchTexture()
+        {
+            List<LoadedMod> mods = ModLoader.Mods;
+            if (mods == null) return null;
+
+            for (int i = 0; i < mods.Count; i++)
+            {
+                LoadedMod mod = mods[i];
+                if (mod == null || mod.Manifest == null) continue;
+                if (!string.Equals(mod.Manifest.ID, ModEntry.ModId, StringComparison.Ordinal)) continue;
+                if (mod.Textures == null) return null;
+
+                Texture2D tex;
+                return mod.Textures.TryGetValue(PatchName, out tex) ? tex : null;
+            }
+
+            return null;
         }
 
         /// <summary>

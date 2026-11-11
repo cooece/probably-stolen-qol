@@ -107,6 +107,14 @@ namespace QoL
         /// <summary>机器区/暗格多页扩容（默认关闭，有丢物品风险）。</summary>
         internal ConfigEntry<bool> BayPages { get; }
 
+        /// <summary>
+        /// 工具快捷键的绑定数据（`物品=键名;物品=键名`）。
+        /// 存成配置项是为了让游戏自己写盘——写文件需要 `files` 能力，
+        /// 而那个能力 2026-12-10 之后会让工坊模组必须通过开发者验证才能加载。
+        /// 设置页里把它藏起来（SettingsHideEntry），玩家看不到这一行。
+        /// </summary>
+        internal ConfigEntry<string> HotkeyStore { get; }
+
         /// <summary>右键菜单里直接升级物品（有材料就升级/修理/充能）。</summary>
         internal ConfigEntry<bool> UpgradeMenu { get; }
 
@@ -347,6 +355,14 @@ namespace QoL
                 () => "机器区/暗格多页扩容",
                 () => "开启后，用杰克逊博士卖的「储藏区扩建套件」对扩建版机器区、改进版暗格使用，就能像储藏区一样加标签页（最多 5 页，一个套件加 1 页）。关掉这个功能只是不能再加页，已经加出来的页照常恢复、东西不会丢；但取消订阅本模组后再读档，第 2 页以后的东西会丢失，退订前请先搬回第 1 页。");
 
+
+            HotkeyStore = _config.Define(
+                "hotkey.store",
+                "",
+                "物品操作",
+                () => "工具快捷键绑定",
+                null,
+                () => "工具快捷键的绑定数据，由游戏随配置一起保存，不用手填。");
 
             UpgradeMenu = _config.Define(
                 "item.upgrade_menu",
