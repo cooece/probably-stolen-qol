@@ -59,6 +59,13 @@ namespace QoL
                 _harmony.Patch(canExpand,
                     postfix: new HarmonyMethod(typeof(BayExpansion), nameof(AfterCanExpand)));
 
+                MethodInfo panelValidate = AccessTools.Method(typeof(MachineryPanel), "Validate");
+                if (panelValidate != null)
+                {
+                    _harmony.Patch(panelValidate,
+                        prefix: new HarmonyMethod(typeof(BayExpansion), nameof(BeforePanelValidate)));
+                }
+
                 QLog.Info("机器区/暗格扩容已挂载（用原版储藏区扩建套件）");
             }
             catch (Exception e)
@@ -95,6 +102,36 @@ namespace QoL
             if (IsOurBay(bay))
             {
                 __result = 1;
+            }
+        }
+
+        /// <summary>
+        /// 去掉仓库面板顶上那条「储藏」。它是 `MachineHelper.Panel(储藏, tabs, "storage")` 的标题，
+        /// 有标题时 Validate 会留 18px，没标题只留 4px —— 所以清掉 label 就自动省下一行高度。
+        ///
+        /// 挂在 Validate 的 prefix 上而不是构造处：玩家现有的窗口面板早就建好了，
+        /// 只有每次重排时顺手清一次，才能对「已经加过页」的那些窗口也生效。
+        /// </summary>
+        private static void BeforePanelValidate(MachineryPanel __instance)
+        {
+            if (!Enabled || __instance == null || __instance.label == null)
+            {
+                return;
+            }
+
+            if (!string.Equals(__instance.role, "storage", StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            // 只在第一次清：清完 label 就是 null，上面的判断会把它挡掉，不会反复重排
+            try
+            {
+                __instance.SetLabel((MachineryLabel)null);
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("去掉仓库标题失败（面板仍可用）：" + e.Message);
             }
         }
 
