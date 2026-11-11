@@ -86,6 +86,7 @@ namespace QoL
             ApplySafe("背包归位", BackpackReturn.Apply);
             ApplySafe("设置页隐藏项", SettingsHideEntry.Apply);
             ApplySafe("酿酒工坊", Brewing.Apply);
+            ApplySafe("反向取液", ReversePour.Apply);
 
             try { ModHook.OnCreateTooltipLate += OnTooltipLate; }
             catch (Exception e) { QLog.Error("订阅提示框钩子失败", e); }
@@ -109,6 +110,7 @@ namespace QoL
             RemoveSafe("背包归位", BackpackReturn.Remove);
             RemoveSafe("设置页隐藏项", SettingsHideEntry.Remove);
             RemoveSafe("酿酒工坊", Brewing.Remove);
+            RemoveSafe("反向取液", ReversePour.Remove);
             RemoveSafe("道具快捷键", QuickToolHotkey.Remove);
             // 右键菜单补丁是 QuickToolHotkey 挂的，但它的 Remove 只撤 provider，补丁要单独撤
             RemoveSafe("右键菜单", ItemContextMenu.Remove);
