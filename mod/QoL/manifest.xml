@@ -19,7 +19,7 @@
   <ID>local.qol</ID>
   <Name>深空当铺 · 便利整合（QoL Bundle）</Name>
   <Author>cooece</Author>
-  <ModVersion>1.2.0</ModVersion>
+  <ModVersion>1.2.1</ModVersion>
   <GameVersions>
     <Version>0.46D</Version>
   </GameVersions>
@@ -30,13 +30,14 @@
 外出归来背包放回原位并把新拿到的物品倒出来。
 机器与电力：全自动换电池、自动换滤芯、解序器自动续卡、机器区与走私者暗格多页扩容（默认关闭）。
 面板里每一项都能单独开关，改完立即生效；不碰存档，新档老档都安全。
+本模组不声明任何特殊权限：不读写你的文件、不联网、不用后台线程。
 
 A one-stop quality-of-life bundle: price trends, auto-authentication, cash and reputation popups,
 dialogue speed-up, box labelling, berry quality badges, drag-select counting, one-click
 upgrade/repair/charge from the right-click menu, backpack returning to its original spot after an
 outing, automatic battery and filter swapping, desequencer auto-refill, and multi-page storage for
 machine areas and smuggler bays. Everything toggles individually in the settings panel and applies
-immediately; saves are never touched.</Description>
+immediately; saves are never touched. It declares no capabilities at all: no file access, no network, no background threads.</Description>
   <Prerequisites />
   <Assemblies>
     <Assembly>QoL.dll</Assembly>
