@@ -101,6 +101,10 @@ namespace QoL
 
         private static float _nextRefresh;
         private static bool _failed;
+
+        /// <summary>已离店（去博士/垃圾场等地）。这些页面不该出现店里的框选统计。</summary>
+        private static bool _outside;
+        private static bool _hooked;
         private static string _leftText = "";
         private static string _rightText = "";
 
@@ -127,6 +131,15 @@ namespace QoL
                     return;
                 }
 
+                EnsureStoreHooks();
+
+                // 外出页面（博士、垃圾场）用的是同一套拖拽网格，但那儿不该出现店里那套统计
+                if (_outside)
+                {
+                    Hide();
+                    return;
+                }
+
                 if (Time.unscaledTime < _nextRefresh) return;
                 _nextRefresh = Time.unscaledTime + RefreshInterval;
                 Refresh();
@@ -136,6 +149,37 @@ namespace QoL
                 // 读框选集合 / 建 UI 失败都只影响这一帧的统计，不能冒到每帧驱动
                 QLog.Warn("[框选统计] 每帧执行失败：" + e.Message);
             }
+        }
+
+        /// <summary>用离店/回店两个钩子判断位置：playerLocation 只在博士那儿被设成 INVENTOR，垃圾场靠不住。</summary>
+        private static void EnsureStoreHooks()
+        {
+            if (_hooked)
+            {
+                return;
+            }
+
+            _hooked = true;
+
+            try
+            {
+                ModHook.OnLeavingStoreEarly += OnLeaveStore;
+                ModHook.OnReturningStoreLate += OnReturnStore;
+            }
+            catch (Exception e)
+            {
+                QLog.Warn("[框选统计] 订阅离店/回店失败：" + e.Message);
+            }
+        }
+
+        private static void OnLeaveStore()
+        {
+            _outside = true;
+        }
+
+        private static void OnReturnStore()
+        {
+            _outside = false;
         }
 
         private static void Refresh()
@@ -246,6 +290,23 @@ namespace QoL
             {
                 // 忽略
             }
+
+            if (_hooked)
+            {
+                _hooked = false;
+
+                try
+                {
+                    ModHook.OnLeavingStoreEarly -= OnLeaveStore;
+                    ModHook.OnReturningStoreLate -= OnReturnStore;
+                }
+                catch
+                {
+                    // 退订失败不影响游戏
+                }
+            }
+
+            _outside = false;
 
             _root = null;
             _canvas = null;
