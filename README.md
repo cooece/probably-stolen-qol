@@ -40,7 +40,17 @@ dotnet build mod/QoL/QoL.csproj -c Release `
   -p:GameDir="C:\Program Files (x86)\Steam\steamapps\common\Probably Stolen"
 ```
 
-产物连同 `manifest.xml` 一起放进 `<游戏目录>\Mods\qol\`，重启游戏生效。
+产物连同 `manifest.xml` 一起放进 `<游戏目录>\Mods\qol\`，重启游戏生效。目录结构：
+
+```
+Mods\qol\
+  ├─ QoL.dll                                  编译产物（bin\Release\QoL.dll）
+  ├─ manifest.xml                             从 mod\QoL\ 复制
+  └─ Textures\
+       └─ negociation_tablet_ScreenOverlay.png  从 mod\QoL\Assets\ 复制
+```
+
+`Textures\` 里的贴图由游戏自己在启动时读进 `LoadedMod.Textures`，模组运行时按文件名取用；漏掉它，框选统计的遮罩会变成空白。
 
 ## 权限声明
 
