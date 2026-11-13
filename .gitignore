@@ -33,3 +33,13 @@ workshop/2D_game_cover_*.png
 
 # 临时反编译/截图产物
 .tmp/
+
+# 参考实现：别人模组的源码副本（版权归原作者，不上传）
+.ref/
+
+# 工程内部笔记与用户偏好记录（不上传）
+.workbuddy/
+
+# 离线扫描工具的编译产物
+tools/**/bin/
+tools/**/obj/
