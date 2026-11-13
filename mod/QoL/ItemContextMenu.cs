@@ -165,6 +165,15 @@ namespace QoL
                 return null;
             }
 
+            // 上次挂上去的自定义按钮也留在这个 grid 里，不能当成「原版按钮」：
+            // 否则每右键一次就把它们再算进原版数量，总行数越滚越多，菜单底部多出空白行。
+            existing = FilterOwnButtons(existing);
+            if (existing.Length == 0)
+            {
+                LogOnce("右键菜单里除了本模组的按钮没有别的按钮");
+                return null;
+            }
+
             // 复用 state（保留 ButtonPool 里的自定义按钮元素），但刷新 grid 与按钮快照。
             if (_menuState == null || _menuState.Window != win)
             {
@@ -205,6 +214,30 @@ namespace QoL
             {
                 return null;
             }
+        }
+
+        /// <summary>去掉上一次挂在这个 grid 上的自定义按钮，只留原版的。</summary>
+        private static RichTextElement[] FilterOwnButtons(RichTextElement[] buttons)
+        {
+            if (_menuState == null || _menuState.ButtonPool.Count == 0) return buttons;
+
+            List<RichTextElement> kept = new List<RichTextElement>(buttons.Length);
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                bool own = false;
+                foreach (ExtraButton extra in _menuState.ButtonPool.Values)
+                {
+                    if (ReferenceEquals(extra.Element, buttons[i]))
+                    {
+                        own = true;
+                        break;
+                    }
+                }
+
+                if (!own) kept.Add(buttons[i]);
+            }
+
+            return kept.ToArray();
         }
 
         private static readonly HashSet<string> _loggedOnce = new HashSet<string>();
