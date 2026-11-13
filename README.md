@@ -25,7 +25,7 @@
 
 需要：
 
-- .NET SDK 8（或用仓库里 `.tools` 的方案，见下）
+- .NET SDK 8
 - 游戏本体（提供编译期引用的程序集）
 - Windows + PowerShell
 
@@ -51,7 +51,6 @@ version.ps1         编译 → 提交 → 打版本标签 → 记 CHANGELOG
 rollback.ps1        回退到某个版本标签
 tools/modscan/      离线跑游戏自带的 ModScanner，发布前确认权限声明
 tools/check_deadcode.py  静态检查：没人引用的声明、设置项是否有人读
-docs/               开发过程中的技术笔记
 ```
 
 ## 权限声明
