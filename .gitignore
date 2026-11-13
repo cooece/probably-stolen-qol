@@ -46,3 +46,11 @@ tools/**/obj/
 
 # 开发笔记（含对其它模组的点名评价，不公开）
 docs/
+
+# 仓库只放模组本体：开发与发布工具链留在本地
+/tools/
+/workshop/
+/*.bat
+/*.ps1
+/mod/build.ps1
+/CHANGELOG.md
