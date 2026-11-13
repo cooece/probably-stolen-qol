@@ -43,3 +43,6 @@ workshop/2D_game_cover_*.png
 # 离线扫描工具的编译产物
 tools/**/bin/
 tools/**/obj/
+
+# 开发笔记（含对其它模组的点名评价，不公开）
+docs/
